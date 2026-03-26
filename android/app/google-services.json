@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "373259438517",
+    "project_id": "boy-barbershop",
+    "storage_bucket": "boy-barbershop.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:373259438517:android:ed6a30f7ecf9645f6a71fc",
+        "android_client_info": {
+          "package_name": "com.example.boy_barbershop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCpoZQJEWuinLiIlq-nfo7qzzCQveMhyds"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
