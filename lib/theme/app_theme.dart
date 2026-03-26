@@ -32,7 +32,7 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: AppColors.dirtyWhite,
       splashFactory: InkSplash.splashFactory,
       appBarTheme: AppBarTheme(
-        centerTitle: true,
+        centerTitle: false,
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: AppColors.dirtyWhite,
