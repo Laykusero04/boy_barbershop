@@ -3,12 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:boy_barbershop/models/app_user.dart';
 import 'package:boy_barbershop/presentation/screens/dashboard_screen.dart';
 import 'package:boy_barbershop/presentation/screens/add_sale_screen.dart';
+import 'package:boy_barbershop/presentation/screens/activity_by_hour_screen.dart';
 import 'package:boy_barbershop/presentation/screens/barbers_screen.dart';
+import 'package:boy_barbershop/presentation/screens/cashflow_screen.dart';
+import 'package:boy_barbershop/presentation/screens/expenses_screen.dart';
+import 'package:boy_barbershop/presentation/screens/investments_screen.dart';
 import 'package:boy_barbershop/presentation/screens/inventory_screen.dart';
+import 'package:boy_barbershop/presentation/screens/owner_pay_screen.dart';
 import 'package:boy_barbershop/presentation/screens/payment_methods_screen.dart';
-import 'package:boy_barbershop/presentation/screens/placeholder_screen.dart';
+import 'package:boy_barbershop/presentation/screens/peak_and_daily_target_screen.dart';
 import 'package:boy_barbershop/presentation/screens/profile_screen.dart';
 import 'package:boy_barbershop/presentation/screens/promos_screen.dart';
+import 'package:boy_barbershop/presentation/screens/reports_screen.dart';
+import 'package:boy_barbershop/presentation/screens/sales_intelligence_screen.dart';
 import 'package:boy_barbershop/presentation/screens/services_screen.dart';
 import 'package:boy_barbershop/presentation/screens/settings_screen.dart';
 
@@ -80,80 +87,56 @@ final List<AppDestination> appDestinations = [
     title: 'Cash flow',
     icon: Icons.payments_outlined,
     group: AppDestinationGroup.money,
-    builder: (context, user) => PlaceholderScreen(
-      title: 'Cash flow',
-      subtitle: 'Coming soon',
-    ),
+    builder: (context, user) => CashflowScreen(user: user),
   ),
   AppDestination(
     id: 'expenses',
     title: 'Expenses',
     icon: Icons.receipt_long_outlined,
     group: AppDestinationGroup.money,
-    builder: (context, user) => PlaceholderScreen(
-      title: 'Expenses',
-      subtitle: 'Coming soon',
-    ),
+    builder: (context, user) => ExpensesScreen(user: user),
   ),
   AppDestination(
     id: 'investments',
     title: 'Investments',
     icon: Icons.savings_outlined,
     group: AppDestinationGroup.money,
-    builder: (context, user) => PlaceholderScreen(
-      title: 'Investments',
-      subtitle: 'Coming soon',
-    ),
+    builder: (context, user) => InvestmentsScreen(user: user),
   ),
   AppDestination(
     id: 'reports',
     title: 'Reports',
     icon: Icons.description_outlined,
     group: AppDestinationGroup.money,
-    builder: (context, user) => PlaceholderScreen(
-      title: 'Reports',
-      subtitle: 'Coming soon',
-    ),
+    builder: (context, user) => ReportsScreen(user: user),
   ),
   AppDestination(
     id: 'sales_intelligence',
     title: 'Sales Intelligence',
     icon: Icons.show_chart_rounded,
     group: AppDestinationGroup.insights,
-    builder: (context, user) => PlaceholderScreen(
-      title: 'Sales Intelligence',
-      subtitle: 'Coming soon',
-    ),
+    builder: (context, user) => SalesIntelligenceScreen(user: user),
   ),
   AppDestination(
     id: 'owner_pay',
     title: 'Owner pay & insights',
     icon: Icons.account_balance_wallet_outlined,
     group: AppDestinationGroup.insights,
-    builder: (context, user) => PlaceholderScreen(
-      title: 'Owner pay & insights',
-      subtitle: 'Coming soon',
-    ),
+    builder: (context, user) => OwnerPayScreen(user: user),
   ),
   AppDestination(
     id: 'activity_by_hour',
     title: 'Activity (by hour)',
     icon: Icons.schedule_outlined,
     group: AppDestinationGroup.insights,
-    builder: (context, user) => PlaceholderScreen(
-      title: 'Activity (by hour)',
-      subtitle: 'Coming soon',
-    ),
+    builder: (context, user) => ActivityByHourScreen(user: user),
   ),
   AppDestination(
     id: 'peak_and_daily_target',
     title: 'Peak & Daily Target',
     icon: Icons.trending_up_rounded,
     group: AppDestinationGroup.insights,
-    builder: (context, user) => PlaceholderScreen(
-      title: 'Peak & Daily Target',
-      subtitle: 'Coming soon',
-    ),
+    builder: (context, user) => PeakAndDailyTargetScreen(user: user),
   ),
   AppDestination(
     id: 'inventory',

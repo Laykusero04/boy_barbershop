@@ -24,5 +24,20 @@ abstract final class FirestoreCollections {
     FirebaseFirestore db,
   ) =>
       db.collection('inventory_items');
+
+  static CollectionReference<Map<String, dynamic>> cashflowEntries(
+    FirebaseFirestore db,
+  ) =>
+      db.collection('cashflow_entries');
+
+  static CollectionReference<Map<String, dynamic>> expenses(
+    FirebaseFirestore db,
+  ) =>
+      db.collection('expenses');
+
+  static CollectionReference<Map<String, dynamic>> settings(
+    FirebaseFirestore db,
+  ) =>
+      db.collection('settings');
 }
 

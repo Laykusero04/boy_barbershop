@@ -1,15 +1,531 @@
 import 'package:flutter/material.dart';
 
+import 'package:boy_barbershop/data/inventory_repository.dart';
+import 'package:boy_barbershop/models/inventory_item.dart';
+
 class InventoryScreen extends StatelessWidget {
   const InventoryScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    return const _InventoryScreenBody();
+  }
+}
+
+class _InventoryScreenBody extends StatefulWidget {
+  const _InventoryScreenBody();
+
+  @override
+  State<_InventoryScreenBody> createState() => _InventoryScreenBodyState();
+}
+
+class _InventoryScreenBodyState extends State<_InventoryScreenBody> {
+  final _repo = InventoryRepository();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Inventory',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _showCreateDialog,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Add item'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Track stock and get low-stock alerts. Items marked inactive won’t be used for service inventory usage.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 16),
+          StreamBuilder<List<InventoryItem>>(
+            stream: _repo.watchAllInventoryItems(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return _ErrorCard(
+                  title: 'Could not load inventory',
+                  error: snapshot.error,
+                );
+              }
+              final items = snapshot.data ?? const <InventoryItem>[];
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  items.isEmpty) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (items.isEmpty) {
+                return _EmptyState(onAdd: _showCreateDialog);
+              }
+
+              return Column(
+                children: [
+                  for (final item in items) ...[
+                    _InventoryTile(
+                      item: item,
+                      onEdit: () => _showEditDialog(item),
+                      onDeactivate: item.isActive ? () => _confirmDeactivate(item) : null,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCreateDialog() async {
+    final result = await showDialog<_InventoryDialogResult>(
+      context: context,
+      builder: (context) => const _InventoryDialog(title: 'Add item'),
+    );
+    if (!mounted || result == null) return;
+
+    try {
+      await _repo.create(
+        itemName: result.itemName,
+        stockQty: result.stockQty,
+        lowStockThreshold: result.lowStockThreshold,
+        unit: result.unit,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Item added.')),
+      );
+    } on InventoryWriteException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
+  Future<void> _showEditDialog(InventoryItem item) async {
+    final result = await showDialog<_InventoryDialogResult>(
+      context: context,
+      builder: (context) => _InventoryDialog(
+        title: 'Edit item',
+        initialItemName: item.itemName,
+        initialStockQty: item.stockQty,
+        initialLowStockThreshold: item.lowStockThreshold,
+        initialUnit: item.unit,
+      ),
+    );
+    if (!mounted || result == null) return;
+
+    try {
+      await _repo.update(
+        id: item.id,
+        itemName: result.itemName,
+        stockQty: result.stockQty,
+        lowStockThreshold: result.lowStockThreshold,
+        unit: result.unit,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Changes saved.')),
+      );
+    } on InventoryWriteException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
+  Future<void> _confirmDeactivate(InventoryItem item) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Deactivate item?'),
+        content: Text(
+          '"${item.itemName}" will be hidden from service inventory usage and ignored by stock checks.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Deactivate'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || ok != true) return;
+
+    try {
+      await _repo.deactivate(item.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Item deactivated.')),
+      );
+    } on InventoryWriteException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+}
+
+class _InventoryTile extends StatelessWidget {
+  const _InventoryTile({
+    required this.item,
+    required this.onEdit,
+    required this.onDeactivate,
+  });
+
+  final InventoryItem item;
+  final VoidCallback onEdit;
+  final VoidCallback? onDeactivate;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Text(
-        'Inventory',
-        style: theme.textTheme.headlineSmall,
+    final statusText = item.isActive
+        ? (item.isLowStock ? 'Low' : 'OK')
+        : 'Inactive';
+
+    final statusColor = !item.isActive
+        ? theme.colorScheme.onSurfaceVariant
+        : (item.isLowStock ? theme.colorScheme.error : theme.colorScheme.secondary);
+
+    final cardColor = item.isLowStock
+        ? theme.colorScheme.errorContainer
+        : theme.colorScheme.surfaceContainerHighest;
+
+    final unit = (item.unit == null || item.unit!.trim().isEmpty) ? null : item.unit!.trim();
+    final stockLabel = unit == null ? _formatQty(item.stockQty) : '${_formatQty(item.stockQty)} $unit';
+
+    return Card(
+      elevation: 0,
+      color: cardColor,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    item.itemName,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                Text(
+                  statusText,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                Text(
+                  'Stock: $stockLabel',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                Text(
+                  'Low threshold: ${item.lowStockThreshold}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit'),
+                ),
+                if (onDeactivate != null)
+                  FilledButton.tonalIcon(
+                    onPressed: onDeactivate,
+                    icon: const Icon(Icons.block_rounded),
+                    label: const Text('Deactivate'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.onAdd});
+
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'No inventory items yet',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Add items you consume during services (blades, alcohol, gel…).',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton(
+                onPressed: onAdd,
+                child: const Text('Add item'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InventoryDialogResult {
+  const _InventoryDialogResult({
+    required this.itemName,
+    required this.stockQty,
+    required this.lowStockThreshold,
+    required this.unit,
+  });
+
+  final String itemName;
+  final double stockQty;
+  final int lowStockThreshold;
+  final String? unit;
+}
+
+class _InventoryDialog extends StatefulWidget {
+  const _InventoryDialog({
+    required this.title,
+    this.initialItemName,
+    this.initialStockQty,
+    this.initialLowStockThreshold,
+    this.initialUnit,
+  });
+
+  final String title;
+  final String? initialItemName;
+  final double? initialStockQty;
+  final int? initialLowStockThreshold;
+  final String? initialUnit;
+
+  @override
+  State<_InventoryDialog> createState() => _InventoryDialogState();
+}
+
+class _InventoryDialogState extends State<_InventoryDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _stockController;
+  late final TextEditingController _thresholdController;
+  late final TextEditingController _unitController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialItemName ?? '');
+    _stockController = TextEditingController(
+      text: widget.initialStockQty != null ? _formatQty(widget.initialStockQty!) : '0',
+    );
+    _thresholdController = TextEditingController(
+      text: (widget.initialLowStockThreshold ?? 5).toString(),
+    );
+    _unitController = TextEditingController(text: widget.initialUnit ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _stockController.dispose();
+    _thresholdController.dispose();
+    _unitController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(labelText: 'Item name'),
+                  textInputAction: TextInputAction.next,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'Item name is required.'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _stockController,
+                  decoration: const InputDecoration(labelText: 'Stock'),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textInputAction: TextInputAction.next,
+                  validator: (v) {
+                    final value = _parseQty(v);
+                    if (value == null) return 'Enter a valid stock value.';
+                    if (value < 0) return 'Stock must be 0 or greater.';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _unitController,
+                  decoration: const InputDecoration(labelText: 'Unit (optional)'),
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _thresholdController,
+                  decoration: const InputDecoration(labelText: 'Low-stock threshold'),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                  textInputAction: TextInputAction.done,
+                  validator: (v) {
+                    final value = _parseInt(v);
+                    if (value == null) return 'Enter a valid threshold.';
+                    if (value < 0) return 'Threshold must be 0 or greater.';
+                    return null;
+                  },
+                  onFieldSubmitted: (_) => _submit(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+
+  void _submit() {
+    final ok = _formKey.currentState?.validate() ?? false;
+    if (!ok) return;
+
+    final stock = _parseQty(_stockController.text);
+    final threshold = _parseInt(_thresholdController.text);
+    if (stock == null || threshold == null) return;
+
+    Navigator.of(context).pop(
+      _InventoryDialogResult(
+        itemName: _nameController.text,
+        stockQty: stock,
+        lowStockThreshold: threshold,
+        unit: _unitController.text,
+      ),
+    );
+  }
+}
+
+double? _parseQty(String? raw) {
+  final cleaned = (raw ?? '').trim().replaceAll(',', '');
+  if (cleaned.isEmpty) return null;
+  return double.tryParse(cleaned);
+}
+
+int? _parseInt(String? raw) {
+  final cleaned = (raw ?? '').trim().replaceAll(',', '');
+  if (cleaned.isEmpty) return null;
+  return int.tryParse(cleaned);
+}
+
+String _formatQty(double value) {
+  if (value.isNaN || value.isInfinite) return '0';
+  final fixed = value.toStringAsFixed(3);
+  return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+}
+
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({required this.title, required this.error});
+
+  final String title;
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.error,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Error: ${error ?? 'Unknown'}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
