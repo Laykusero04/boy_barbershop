@@ -18,13 +18,7 @@ class CatalogRepository {
           (snap) {
             final list = snap.docs
               .map(
-                (d) => Barber(
-                  id: d.id,
-                  name: ((d.data()['name'] as String?) ?? '').trim(),
-                  percentageShare:
-                      (d.data()['percentage_share'] as num?)?.toDouble() ?? 0,
-                  isActive: (d.data()['is_active'] as bool?) ?? false,
-                ),
+                (d) => Barber.fromFirestoreMap(d.id, d.data()),
               )
               .where((b) => b.name.isNotEmpty)
               .toList(growable: false);

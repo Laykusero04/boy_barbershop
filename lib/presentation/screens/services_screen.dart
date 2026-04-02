@@ -1,20 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/bloc/services/services_cubit.dart';
+import 'package:boy_barbershop/bloc/services/services_state.dart';
 import 'package:boy_barbershop/data/inventory_repository.dart';
 import 'package:boy_barbershop/data/services_repository.dart';
 import 'package:boy_barbershop/models/inventory_item.dart';
 import 'package:boy_barbershop/models/service_item.dart';
 
-class ServicesScreen extends StatefulWidget {
+class ServicesScreen extends StatelessWidget {
   const ServicesScreen({super.key});
-
-  @override
-  State<ServicesScreen> createState() => _ServicesScreenState();
-}
-
-class _ServicesScreenState extends State<ServicesScreen> {
-  final _servicesRepo = ServicesRepository();
-  final _inventoryRepo = InventoryRepository();
 
   @override
   Widget build(BuildContext context) {
@@ -22,60 +17,45 @@ class _ServicesScreenState extends State<ServicesScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Services',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _showCreateDialog,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Add service'),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: () => _showCreateDialog(context),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add service'),
+            ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Tip: Inactive services won’t appear in Add Sale, but old sales stay intact.',
+            'Tip: Inactive services won\u2019t appear in Add Sale, but old sales stay intact.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
           const SizedBox(height: 16),
-          StreamBuilder<List<ServiceItem>>(
-            stream: _servicesRepo.watchAllServices(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return _ErrorCard(
-                  title: 'Could not load services',
-                  error: snapshot.error,
-                );
-              }
-              final services = snapshot.data ?? const <ServiceItem>[];
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  services.isEmpty) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (services.isEmpty) {
-                return _EmptyState(onAdd: _showCreateDialog);
-              }
-
-              return Column(
-                children: [
-                  for (final s in services) ...[
-                    _ServiceTile(
-                      service: s,
-                      onEdit: () => _showEditDialog(s),
-                      onDeactivate:
-                          s.isActive ? () => _confirmDeactivate(s) : null,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              );
+          BlocBuilder<ServicesCubit, ServicesState>(
+            builder: (context, state) {
+              return switch (state) {
+                ServicesLoading() =>
+                  const Center(child: CircularProgressIndicator()),
+                ServicesError(:final message) =>
+                  _ErrorCard(title: 'Could not load services', error: message),
+                ServicesLoaded(:final services) => services.isEmpty
+                    ? _EmptyState(onAdd: () => _showCreateDialog(context))
+                    : Column(
+                        children: [
+                          for (final s in services) ...[
+                            _ServiceTile(
+                              service: s,
+                              onEdit: () => _showEditDialog(context, s),
+                              onDeactivate:
+                                  s.isActive ? () => _confirmDeactivate(context, s) : null,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ],
+                      ),
+              };
             },
           ),
         ],
@@ -83,68 +63,76 @@ class _ServicesScreenState extends State<ServicesScreen> {
     );
   }
 
-  Future<void> _showCreateDialog() async {
+  Future<void> _showCreateDialog(BuildContext context) async {
+    final inventoryRepo = context.read<InventoryRepository>();
+    final servicesRepo = context.read<ServicesRepository>();
+
     final result = await showDialog<_ServiceDialogResult>(
       context: context,
-      builder: (context) => _ServiceDialog(
+      builder: (ctx) => _ServiceDialog(
         title: 'Add service',
-        inventoryItemsStream: _inventoryRepo.watchActiveInventoryItems(),
+        inventoryItemsStream: inventoryRepo.watchActiveInventoryItems(),
         loadExistingUsage: null,
       ),
     );
-    if (!mounted || result == null) return;
+    if (!context.mounted || result == null) return;
 
     try {
-      await _servicesRepo.createService(
+      await servicesRepo.createService(
         name: result.name,
         defaultPrice: result.defaultPrice,
         inventoryUsage: result.inventoryUsage,
       );
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Service added.')),
       );
     } on ServiceWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _showEditDialog(ServiceItem service) async {
+  Future<void> _showEditDialog(
+      BuildContext context, ServiceItem service) async {
+    final inventoryRepo = context.read<InventoryRepository>();
+    final servicesRepo = context.read<ServicesRepository>();
+
     final result = await showDialog<_ServiceDialogResult>(
       context: context,
-      builder: (context) => _ServiceDialog(
+      builder: (ctx) => _ServiceDialog(
         title: 'Edit service',
         initialName: service.name,
         initialDefaultPrice: service.defaultPrice,
-        inventoryItemsStream: _inventoryRepo.watchActiveInventoryItems(),
-        loadExistingUsage: () => _servicesRepo.fetchInventoryUsage(service.id),
+        inventoryItemsStream: inventoryRepo.watchActiveInventoryItems(),
+        loadExistingUsage: () => servicesRepo.fetchInventoryUsage(service.id),
       ),
     );
-    if (!mounted || result == null) return;
+    if (!context.mounted || result == null) return;
 
     try {
-      await _servicesRepo.updateService(
+      await servicesRepo.updateService(
         serviceId: service.id,
         name: result.name,
         defaultPrice: result.defaultPrice,
         inventoryUsage: result.inventoryUsage,
       );
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Changes saved.')),
       );
     } on ServiceWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _confirmDeactivate(ServiceItem service) async {
+  Future<void> _confirmDeactivate(
+      BuildContext context, ServiceItem service) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -164,16 +152,16 @@ class _ServicesScreenState extends State<ServicesScreen> {
         ],
       ),
     );
-    if (!mounted || ok != true) return;
+    if (!context.mounted || ok != true) return;
 
     try {
-      await _servicesRepo.deactivateService(service.id);
-      if (!mounted) return;
+      await context.read<ServicesRepository>().deactivateService(service.id);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Service deactivated.')),
       );
     } on ServiceWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
@@ -561,4 +549,3 @@ class _ErrorCard extends StatelessWidget {
     );
   }
 }
-

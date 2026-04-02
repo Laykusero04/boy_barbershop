@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/cashflow_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
@@ -15,8 +16,6 @@ class CashflowScreen extends StatefulWidget {
 }
 
 class _CashflowScreenState extends State<CashflowScreen> {
-  final _repo = CashflowRepository();
-
   late String _day;
 
   @override
@@ -37,8 +36,6 @@ class _CashflowScreenState extends State<CashflowScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Cash flow', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 12),
                   const TabBar(
                     isScrollable: true,
                     tabs: [
@@ -54,13 +51,11 @@ class _CashflowScreenState extends State<CashflowScreen> {
               child: TabBarView(
                 children: [
                   _CashflowLedgerTab(
-                    repo: _repo,
                     user: widget.user,
                     initialDay: _day,
                     onDayChanged: (v) => setState(() => _day = v),
                   ),
                   _CashflowDailySummaryTab(
-                    repo: _repo,
                     user: widget.user,
                     initialDay: _day,
                     onDayChanged: (v) => setState(() => _day = v),
@@ -77,13 +72,11 @@ class _CashflowScreenState extends State<CashflowScreen> {
 
 class _CashflowLedgerTab extends StatefulWidget {
   const _CashflowLedgerTab({
-    required this.repo,
     required this.user,
     required this.initialDay,
     required this.onDayChanged,
   });
 
-  final CashflowRepository repo;
   final AppUser user;
   final String initialDay;
   final ValueChanged<String> onDayChanged;
@@ -105,6 +98,7 @@ class _CashflowLedgerTabState extends State<_CashflowLedgerTab> {
 
   @override
   Widget build(BuildContext context) {
+    final repo = context.read<CashflowRepository>();
     final theme = Theme.of(context);
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -155,7 +149,7 @@ class _CashflowLedgerTabState extends State<_CashflowLedgerTab> {
         ),
         const SizedBox(height: 12),
         StreamBuilder<List<CashflowEntry>>(
-          stream: widget.repo.watchEntriesForDay(_viewDay, limit: 500),
+          stream: repo.watchEntriesForDay(_viewDay, limit: 500),
           builder: (context, snap) {
             if (snap.hasError) {
               return _ErrorCard(title: 'Could not load cashflow', error: snap.error);
@@ -202,6 +196,7 @@ class _CashflowLedgerTabState extends State<_CashflowLedgerTab> {
     );
     if (!context.mounted || result == null) return;
 
+    final repo = context.read<CashflowRepository>();
     try {
       final dt = utcFromManilaParts(
         year: result.day.year,
@@ -211,7 +206,7 @@ class _CashflowLedgerTabState extends State<_CashflowLedgerTab> {
         minute: result.time.minute,
       );
       final dayManila = yyyyMmDd(result.day);
-      await widget.repo.createEntry(
+      await repo.createEntry(
         occurredAtUtc: dt,
         occurredDayManila: dayManila,
         type: result.type,
@@ -258,8 +253,9 @@ class _CashflowLedgerTabState extends State<_CashflowLedgerTab> {
     );
     if (!context.mounted || ok != true) return;
 
+    final repo = context.read<CashflowRepository>();
     try {
-      await widget.repo.deleteEntry(entry.id);
+      await repo.deleteEntry(entry.id);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Entry deleted.')),
@@ -275,13 +271,11 @@ class _CashflowLedgerTabState extends State<_CashflowLedgerTab> {
 
 class _CashflowDailySummaryTab extends StatefulWidget {
   const _CashflowDailySummaryTab({
-    required this.repo,
     required this.user,
     required this.initialDay,
     required this.onDayChanged,
   });
 
-  final CashflowRepository repo;
   final AppUser user;
   final String initialDay;
   final ValueChanged<String> onDayChanged;
@@ -313,6 +307,7 @@ class _CashflowDailySummaryTabState extends State<_CashflowDailySummaryTab> {
 
   @override
   Widget build(BuildContext context) {
+    final repo = context.read<CashflowRepository>();
     final theme = Theme.of(context);
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -361,7 +356,7 @@ class _CashflowDailySummaryTabState extends State<_CashflowDailySummaryTab> {
         ),
         const SizedBox(height: 12),
         StreamBuilder<List<CashflowEntry>>(
-          stream: widget.repo.watchEntriesForDay(_viewDay, limit: 1000),
+          stream: repo.watchEntriesForDay(_viewDay, limit: 1000),
           builder: (context, snap) {
             if (snap.hasError) {
               return _ErrorCard(title: 'Could not load summary', error: snap.error);
@@ -551,8 +546,9 @@ class _CashflowDailySummaryTabState extends State<_CashflowDailySummaryTab> {
       minute: now.minute,
     );
 
+    final repo = context.read<CashflowRepository>();
     try {
-      await widget.repo.createEntry(
+      await repo.createEntry(
         occurredAtUtc: dtUtc,
         occurredDayManila: day,
         type: type,
@@ -1111,4 +1107,3 @@ String _formatMoney(double value) {
   if (fixed.endsWith('.00')) return fixed.substring(0, fixed.length - 3);
   return fixed;
 }
-

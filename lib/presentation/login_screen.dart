@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:boy_barbershop/bloc/app_bloc.dart';
-import 'package:boy_barbershop/bloc/app_event.dart';
-import 'package:boy_barbershop/bloc/app_state.dart';
+import 'package:boy_barbershop/bloc/app/app_bloc.dart';
+import 'package:boy_barbershop/bloc/app/app_event.dart';
+import 'package:boy_barbershop/bloc/app/app_state.dart';
 import 'package:boy_barbershop/components/login_form.dart';
 
 class LoginScreen extends StatelessWidget {

@@ -28,7 +28,11 @@ class _AppShellState extends State<AppShell> {
         selectedId: _selectedId,
         onSelect: (id) => setState(() => _selectedId = id),
       ),
-      body: destination.builder(context, widget.user),
+      body: destination.builder(
+        context,
+        widget.user,
+        (id) => setState(() => _selectedId = id),
+      ),
     );
   }
 }

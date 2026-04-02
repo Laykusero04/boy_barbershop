@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/expenses_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
@@ -35,8 +36,6 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Expenses', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 12),
                   const TabBar(
                     isScrollable: true,
                     tabs: [
@@ -86,7 +85,6 @@ class _ExpensesLedgerTab extends StatefulWidget {
 }
 
 class _ExpensesLedgerTabState extends State<_ExpensesLedgerTab> {
-  final _repo = ExpensesRepository();
   late String _day;
   late String _viewDay;
 
@@ -99,6 +97,7 @@ class _ExpensesLedgerTabState extends State<_ExpensesLedgerTab> {
 
   @override
   Widget build(BuildContext context) {
+    final repo = context.read<ExpensesRepository>();
     final theme = Theme.of(context);
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -149,7 +148,7 @@ class _ExpensesLedgerTabState extends State<_ExpensesLedgerTab> {
         ),
         const SizedBox(height: 12),
         StreamBuilder<List<Expense>>(
-          stream: _repo.watchExpensesForDay(_viewDay, limit: 500),
+          stream: repo.watchExpensesForDay(_viewDay, limit: 500),
           builder: (context, snap) {
             if (snap.hasError) {
               return _ErrorCard(title: 'Could not load expenses', error: snap.error);
@@ -192,6 +191,7 @@ class _ExpensesLedgerTabState extends State<_ExpensesLedgerTab> {
     );
     if (!context.mounted || result == null) return;
 
+    final repo = context.read<ExpensesRepository>();
     try {
       final dtUtc = utcFromManilaParts(
         year: result.day.year,
@@ -201,7 +201,7 @@ class _ExpensesLedgerTabState extends State<_ExpensesLedgerTab> {
         minute: result.time.minute,
       );
       final dayManila = yyyyMmDd(result.day);
-      await _repo.createExpense(
+      await repo.createExpense(
         occurredAtUtc: dtUtc,
         occurredDayManila: dayManila,
         category: result.category,
@@ -249,8 +249,9 @@ class _ExpensesLedgerTabState extends State<_ExpensesLedgerTab> {
     );
     if (!context.mounted || ok != true) return;
 
+    final repo = context.read<ExpensesRepository>();
     try {
-      await _repo.deleteExpense(expense.id);
+      await repo.deleteExpense(expense.id);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Expense deleted.')),
@@ -276,7 +277,6 @@ class _ExpensesSummaryTab extends StatefulWidget {
 }
 
 class _ExpensesSummaryTabState extends State<_ExpensesSummaryTab> {
-  final _repo = ExpensesRepository();
   late String _day;
   late String _viewDay;
 
@@ -289,6 +289,7 @@ class _ExpensesSummaryTabState extends State<_ExpensesSummaryTab> {
 
   @override
   Widget build(BuildContext context) {
+    final repo = context.read<ExpensesRepository>();
     final theme = Theme.of(context);
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -330,7 +331,7 @@ class _ExpensesSummaryTabState extends State<_ExpensesSummaryTab> {
         ),
         const SizedBox(height: 12),
         StreamBuilder<List<Expense>>(
-          stream: _repo.watchExpensesForDay(_viewDay, limit: 1000),
+          stream: repo.watchExpensesForDay(_viewDay, limit: 1000),
           builder: (context, snap) {
             if (snap.hasError) {
               return _ErrorCard(title: 'Could not load summary', error: snap.error);
@@ -932,4 +933,3 @@ List<MapEntry<String, double>> _groupByPaymentMethod(List<Expense> items) {
   out.sort((a, b) => b.value.compareTo(a.value));
   return out;
 }
-

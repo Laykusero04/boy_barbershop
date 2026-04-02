@@ -76,3 +76,30 @@ String formatMoney(double value) {
   return fixed;
 }
 
+const _monthNamesEn = <String>[
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/// Human-readable Manila calendar day, e.g. "April 2, 2026".
+String formatManilaDayForDisplay(String dayYyyyMmDd) {
+  final d = parseYyyyMmDd(dayYyyyMmDd) ?? nowManila();
+  return '${_monthNamesEn[d.month - 1]} ${d.day}, ${d.year}';
+}
+
+/// Month and year for headings, e.g. "April 2026".
+String formatManilaMonthYearForDisplay(String dayYyyyMmDd) {
+  final d = parseYyyyMmDd(dayYyyyMmDd) ?? nowManila();
+  return '${_monthNamesEn[d.month - 1]} ${d.year}';
+}
+

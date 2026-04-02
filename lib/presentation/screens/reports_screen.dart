@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/cashflow_repository.dart';
 import 'package:boy_barbershop/data/expenses_repository.dart';
@@ -39,8 +40,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Reports', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 12),
                   const TabBar(
                     isScrollable: true,
                     tabs: [
@@ -92,9 +91,10 @@ class _DailyReportTab extends StatefulWidget {
 }
 
 class _DailyReportTabState extends State<_DailyReportTab> {
-  final _sales = SalesRepository();
-  final _expenses = ExpensesRepository();
-  final _cashflow = CashflowRepository();
+  late final SalesRepository _sales;
+  late final ExpensesRepository _expenses;
+  late final CashflowRepository _cashflow;
+  bool _depsInit = false;
 
   late String _day;
   late String _viewDay;
@@ -104,6 +104,17 @@ class _DailyReportTabState extends State<_DailyReportTab> {
     super.initState();
     _day = widget.initialDay;
     _viewDay = _day;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInit) {
+      _depsInit = true;
+      _sales = context.read<SalesRepository>();
+      _expenses = context.read<ExpensesRepository>();
+      _cashflow = context.read<CashflowRepository>();
+    }
   }
 
   @override
@@ -255,9 +266,10 @@ class _WeeklyReportTab extends StatefulWidget {
 }
 
 class _WeeklyReportTabState extends State<_WeeklyReportTab> {
-  final _sales = SalesRepository();
-  final _expenses = ExpensesRepository();
-  final _cashflow = CashflowRepository();
+  late final SalesRepository _sales;
+  late final ExpensesRepository _expenses;
+  late final CashflowRepository _cashflow;
+  bool _depsInit = false;
 
   late String _day;
   late String _viewDay;
@@ -268,6 +280,17 @@ class _WeeklyReportTabState extends State<_WeeklyReportTab> {
     super.initState();
     _day = widget.initialDay;
     _viewDay = _day;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInit) {
+      _depsInit = true;
+      _sales = context.read<SalesRepository>();
+      _expenses = context.read<ExpensesRepository>();
+      _cashflow = context.read<CashflowRepository>();
+    }
   }
 
   @override
@@ -409,9 +432,10 @@ class _MonthlyReportTab extends StatefulWidget {
 }
 
 class _MonthlyReportTabState extends State<_MonthlyReportTab> {
-  final _sales = SalesRepository();
-  final _expenses = ExpensesRepository();
-  final _cashflow = CashflowRepository();
+  late final SalesRepository _sales;
+  late final ExpensesRepository _expenses;
+  late final CashflowRepository _cashflow;
+  bool _depsInit = false;
 
   late String _day;
   late String _viewDay;
@@ -422,6 +446,17 @@ class _MonthlyReportTabState extends State<_MonthlyReportTab> {
     super.initState();
     _day = widget.initialDay;
     _viewDay = _day;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInit) {
+      _depsInit = true;
+      _sales = context.read<SalesRepository>();
+      _expenses = context.read<ExpensesRepository>();
+      _cashflow = context.read<CashflowRepository>();
+    }
   }
 
   @override
@@ -797,4 +832,3 @@ String _formatMoney(double value) {
   if (fixed.endsWith('.00')) return fixed.substring(0, fixed.length - 3);
   return fixed;
 }
-

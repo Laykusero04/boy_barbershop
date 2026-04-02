@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/barbers_repository.dart';
 import 'package:boy_barbershop/data/catalog_repository.dart';
@@ -15,17 +16,123 @@ import 'package:boy_barbershop/models/sale.dart';
 import 'package:boy_barbershop/presentation/screens/add_sale_screen.dart';
 import 'package:boy_barbershop/presentation/screens/dashboard/dashboard_logic.dart';
 import 'package:boy_barbershop/presentation/screens/dashboard/dashboard_models.dart';
-import 'package:boy_barbershop/presentation/screens/expenses_screen.dart';
-import 'package:boy_barbershop/presentation/screens/inventory_screen.dart';
-import 'package:boy_barbershop/presentation/screens/peak_and_daily_target_screen.dart';
-import 'package:boy_barbershop/presentation/screens/reports_screen.dart';
 import 'package:boy_barbershop/utils/day_range.dart';
 import 'package:boy_barbershop/utils/shop_time.dart';
 
+String _dashboardSaleEarningsLine({required Sale sale, required Barber? barber}) {
+  if (barber != null &&
+      barber.compensationType == BarberCompensationType.dailyRate) {
+    return 'Daily rate: ₱${formatMoney(barber.dailyRate)} / day';
+  }
+  final share = barber?.percentageShare ?? 0.0;
+  final earn = sale.price * (share / 100);
+  return 'Earnings (${share.toStringAsFixed(0)}%): ₱${formatMoney(earn)}';
+}
+
+String _dashboardEarningsRowSubtitle(BarberEarningsRow row) {
+  final b = row.barber;
+  final pay = b.compensationType == BarberCompensationType.dailyRate
+      ? 'daily ₱${formatMoney(b.dailyRate)}'
+      : '${b.percentageShare.toStringAsFixed(0)}%';
+  return 'Sales: ₱${formatMoney(row.totalSales)} • ${row.servicesCount} services • $pay';
+}
+
+const double _kPagePadding = 24;
+const double _kSectionGap = 20;
+const double _kInnerGap = 10;
+const int _kSalesPreviewCount = 6;
+
+class _DashboardHeader extends StatelessWidget {
+  const _DashboardHeader({required this.day});
+
+  final String day;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Overview',
+          style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          formatManilaDayForDisplay(day),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatCell extends StatelessWidget {
+  const _StatCell({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatGrid extends StatelessWidget {
+  const _StatGrid({required this.cells});
+
+  final List<({String label, String value})> cells;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gap = 12.0;
+        final w = (constraints.maxWidth - gap) / 2;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: cells
+              .map(
+                (c) => SizedBox(
+                  width: w,
+                  child: _StatCell(label: c.label, value: c.value),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key, required this.user});
+  const DashboardScreen({super.key, required this.user, required this.goToDestination});
 
   final AppUser user;
+  final void Function(String destinationId) goToDestination;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -34,34 +141,26 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   static const _dailyTargetSalesKey = 'daily_target_sales_amount';
 
-  final _salesRepo = SalesRepository();
-  final _expensesRepo = ExpensesRepository();
-  final _barbersRepo = BarbersRepository();
-  final _inventoryRepo = InventoryRepository();
-  final _settingsRepo = SettingsRepository();
-  final _catalogRepo = CatalogRepository();
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final day = todayManilaDay();
+
+    final salesRepo = context.read<SalesRepository>();
+    final expensesRepo = context.read<ExpensesRepository>();
+    final barbersRepo = context.read<BarbersRepository>();
+    final inventoryRepo = context.read<InventoryRepository>();
+    final settingsRepo = context.read<SettingsRepository>();
+    final catalogRepo = context.read<CatalogRepository>();
 
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(_kPagePadding, _kPagePadding, _kPagePadding, 32),
         children: [
-          Text('Dashboard', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          Text(
-            'Today: $day',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 16),
+          _DashboardHeader(day: day),
+          const SizedBox(height: 12),
 
           StreamBuilder<List<Barber>>(
-            stream: _barbersRepo.watchAllBarbers(),
+            stream: barbersRepo.watchAllBarbers(),
             builder: (context, barbersSnap) {
               if (barbersSnap.hasError) {
                 return _ErrorCard(title: 'Could not load barbers', error: barbersSnap.error);
@@ -70,7 +169,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               final barberById = mapBarbersById(barbers);
 
               return StreamBuilder<List<Sale>>(
-                stream: _salesRepo.watchSalesForDay(day, limit: 200),
+                stream: salesRepo.watchSalesForDay(day, limit: 200),
                 builder: (context, salesSnap) {
                   if (salesSnap.hasError) {
                     return _ErrorCard(title: 'Could not load sales', error: salesSnap.error);
@@ -78,7 +177,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   final sales = salesSnap.data ?? const <Sale>[];
 
                   return StreamBuilder<List<Expense>>(
-                    stream: _expensesRepo.watchExpensesForDay(day, limit: 500),
+                    stream: expensesRepo.watchExpensesForDay(day, limit: 500),
                     builder: (context, expSnap) {
                       if (expSnap.hasError) {
                         return _ErrorCard(title: 'Could not load expenses', error: expSnap.error);
@@ -91,7 +190,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final earningsRows = computeEarningsRows(sales: sales, barbers: barbers);
 
                       return StreamBuilder<List<InventoryItem>>(
-                        stream: _inventoryRepo.watchActiveInventoryItems(),
+                        stream: inventoryRepo.watchActiveInventoryItems(),
                         builder: (context, invSnap) {
                           if (invSnap.hasError) {
                             return _ErrorCard(
@@ -102,7 +201,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           final lowStock = lowStockItems(invSnap.data ?? const <InventoryItem>[]);
 
                           return StreamBuilder<double?>(
-                            stream: _settingsRepo.watchOptionalDouble(_dailyTargetSalesKey),
+                            stream: settingsRepo.watchOptionalDouble(_dailyTargetSalesKey),
                             builder: (context, targetSnap) {
                               final targetSales = targetSnap.data;
                               final alerts = buildAlerts(
@@ -118,10 +217,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   if (alerts.isNotEmpty) ...[
                                     _AlertsCard(
                                       alerts: alerts.take(3).toList(growable: false),
-                                      onOpenTarget: () => _openPeakAndTarget(context),
-                                      onOpenInventory: () => _openInventory(context),
+                                      onOpenTarget: () => widget.goToDestination('peak_and_daily_target'),
+                                      onOpenInventory: () => widget.goToDestination('inventory'),
                                     ),
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: _kSectionGap),
                                   ],
                                   _TodayCard(
                                     user: widget.user,
@@ -129,28 +228,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     sales: sales,
                                     kpis: kpis,
                                     dailyTargetSales: targetSales,
-                                    onOpenAddSale: () => _openAddSale(context),
-                                    onOpenExpenses: () => _openExpenses(context),
-                                    onOpenReports: () => _openReports(context),
-                                    onOpenPeakAndTarget: () => _openPeakAndTarget(context),
+                                    onOpenAddSale: () =>
+                                        showAddSaleDialog(context, user: widget.user),
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: _kSectionGap),
                                   _TodaySalesCard(
-                                    day: day,
                                     sales: sales,
                                     barberById: barberById,
-                                    paymentMethods: _catalogRepo.watchActivePaymentMethods(),
+                                    paymentMethods: catalogRepo.watchActivePaymentMethods(),
                                     onEditSaved: () {},
                                     onDeleteSaved: () {},
-                                    salesRepo: _salesRepo,
+                                    salesRepo: salesRepo,
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: _kSectionGap),
                                   _BarberEarningsCard(rows: earningsRows),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: _kSectionGap),
                                   _ThisMonthCard(
                                     anyDayInMonth: day,
-                                    salesRepo: _salesRepo,
-                                    expensesRepo: _expensesRepo,
+                                    salesRepo: salesRepo,
+                                    expensesRepo: expensesRepo,
                                     barberById: barberById,
                                   ),
                                 ],
@@ -168,27 +264,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
-  }
-
-  void _openAddSale(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => AddSaleScreen(user: widget.user)));
-  }
-
-  void _openExpenses(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ExpensesScreen(user: widget.user)));
-  }
-
-  void _openReports(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ReportsScreen(user: widget.user)));
-  }
-
-  void _openPeakAndTarget(BuildContext context) {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => PeakAndDailyTargetScreen(user: widget.user)));
-  }
-
-  void _openInventory(BuildContext context) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const InventoryScreen()));
   }
 }
 
@@ -210,26 +285,31 @@ class _AlertsCard extends StatelessWidget {
       elevation: 0,
       color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Expanded(child: Text('Alerts', style: theme.textTheme.titleMedium)),
-                Icon(Icons.notifications_outlined, color: theme.colorScheme.onSurfaceVariant),
+                Expanded(
+                  child: Text(
+                    'Alerts',
+                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Icon(Icons.notifications_outlined, size: 20, color: theme.colorScheme.onSurfaceVariant),
               ],
             ),
-            const SizedBox(height: 12),
-            for (final a in alerts) ...[
+            const SizedBox(height: 8),
+            for (var i = 0; i < alerts.length; i++) ...[
               _AlertRow(
-                alert: a,
-                onView: switch (a.type) {
+                alert: alerts[i],
+                onTap: switch (alerts[i].type) {
                   DashboardAlertType.belowDailyTarget => onOpenTarget,
                   DashboardAlertType.lowInventory => onOpenInventory,
                 },
               ),
-              const SizedBox(height: 10),
+              if (i < alerts.length - 1) const SizedBox(height: 6),
             ],
           ],
         ),
@@ -239,40 +319,60 @@ class _AlertsCard extends StatelessWidget {
 }
 
 class _AlertRow extends StatelessWidget {
-  const _AlertRow({required this.alert, required this.onView});
+  const _AlertRow({required this.alert, required this.onTap});
+
   final DashboardAlert alert;
-  final VoidCallback onView;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
+    final radius = BorderRadius.circular(10);
+    return Material(
+      color: theme.colorScheme.surface.withValues(alpha: 0.65),
+      borderRadius: radius,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: radius,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                alert.title,
-                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                alert.subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 20,
+                  color: theme.colorScheme.secondary,
                 ),
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      alert.title,
+                      style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      alert.subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant),
             ],
           ),
         ),
-        const SizedBox(width: 12),
-        FilledButton.tonal(
-          onPressed: onView,
-          child: const Text('View'),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -285,9 +385,6 @@ class _TodayCard extends StatelessWidget {
     required this.kpis,
     required this.dailyTargetSales,
     required this.onOpenAddSale,
-    required this.onOpenExpenses,
-    required this.onOpenReports,
-    required this.onOpenPeakAndTarget,
   });
 
   final AppUser user;
@@ -296,9 +393,6 @@ class _TodayCard extends StatelessWidget {
   final DashboardKpis kpis;
   final double? dailyTargetSales;
   final VoidCallback onOpenAddSale;
-  final VoidCallback onOpenExpenses;
-  final VoidCallback onOpenReports;
-  final VoidCallback onOpenPeakAndTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -334,9 +428,38 @@ class _TodayCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: _kInnerGap),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Total sales',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '₱${formatMoney(kpis.sales)}',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(
-              'Last sale: $lastTime',
+              'Last sale $lastTime',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -347,14 +470,14 @@ class _TodayCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'Daily target: ₱${formatMoney(target)}',
+                      'Daily target ₱${formatMoney(target)}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
                   Text(
-                    'Remaining: ₱${formatMoney(remaining ?? 0)}',
+                    'Remaining ₱${formatMoney(remaining ?? 0)}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -368,45 +491,27 @@ class _TodayCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                _KpiPill(label: 'Customers', value: '${kpis.customers}'),
-                _KpiPill(label: 'Sales', value: '₱${formatMoney(kpis.sales)}'),
-                _KpiPill(label: 'Share', value: '₱${formatMoney(kpis.barberShare)}'),
-                _KpiPill(label: 'Expenses', value: '₱${formatMoney(kpis.expenses)}'),
-                _KpiPill(label: 'Net profit', value: '₱${formatMoney(kpis.netProfitEstimate)}'),
+            _StatGrid(
+              cells: [
+                (label: 'Customers', value: '${kpis.customers}'),
+                (label: 'Barber share', value: '₱${formatMoney(kpis.barberShare)}'),
+                (label: 'Expenses', value: '₱${formatMoney(kpis.expenses)}'),
+                (label: 'Net profit', value: '₱${formatMoney(kpis.netProfitEstimate)}'),
               ],
             ),
-            const SizedBox(height: 14),
-            Text('Quick actions', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                FilledButton.icon(
-                  onPressed: onOpenAddSale,
-                  icon: const Icon(Icons.add_circle_outline_rounded),
-                  label: const Text('Add sale'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: onOpenExpenses,
-                  icon: const Icon(Icons.receipt_long_outlined),
-                  label: const Text('Expenses'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: onOpenReports,
-                  icon: const Icon(Icons.description_outlined),
-                  label: const Text('Reports'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: onOpenPeakAndTarget,
-                  icon: const Icon(Icons.trending_up_rounded),
-                  label: const Text('Peak & Target'),
-                ),
-              ],
+            const SizedBox(height: 16),
+            Text(
+              'Quick actions',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: _kInnerGap),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onOpenAddSale,
+                icon: const Icon(Icons.add_circle_outline_rounded),
+                label: const Text('Add sale'),
+              ),
             ),
           ],
         ),
@@ -415,32 +520,8 @@ class _TodayCard extends StatelessWidget {
   }
 }
 
-class _KpiPill extends StatelessWidget {
-  const _KpiPill({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: theme.colorScheme.surface,
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Text(
-        '$label: $value',
-        style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w900),
-      ),
-    );
-  }
-}
-
-class _TodaySalesCard extends StatelessWidget {
+class _TodaySalesCard extends StatefulWidget {
   const _TodaySalesCard({
-    required this.day,
     required this.sales,
     required this.barberById,
     required this.paymentMethods,
@@ -449,7 +530,6 @@ class _TodaySalesCard extends StatelessWidget {
     required this.onDeleteSaved,
   });
 
-  final String day;
   final List<Sale> sales;
   final Map<String, Barber> barberById;
   final Stream<List<PaymentMethodItem>> paymentMethods;
@@ -458,53 +538,11 @@ class _TodaySalesCard extends StatelessWidget {
   final VoidCallback onDeleteSaved;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final limited = sales.take(30).toList(growable: false);
-    return Card(
-      elevation: 0,
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Today’s sales', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              'Latest first. Edit/delete works immediately.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (limited.isEmpty)
-              Text(
-                'No sales recorded for today.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              )
-            else
-              Column(
-                children: [
-                  for (final sale in limited) ...[
-                    _SaleTile(
-                      sale: sale,
-                      barberName: barberById[sale.barberId]?.name ?? 'Unknown',
-                      barberShare: barberById[sale.barberId]?.percentageShare ?? 0,
-                      onEdit: () => _showEdit(context, sale),
-                      onDelete: () => _confirmDelete(context, sale),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+  State<_TodaySalesCard> createState() => _TodaySalesCardState();
+}
+
+class _TodaySalesCardState extends State<_TodaySalesCard> {
+  bool _showAllSales = false;
 
   Future<void> _confirmDelete(BuildContext context, Sale sale) async {
     final ok = await showDialog<bool>(
@@ -520,10 +558,10 @@ class _TodaySalesCard extends StatelessWidget {
     );
     if (!context.mounted || ok != true) return;
     try {
-      await salesRepo.deleteSale(sale.id);
+      await widget.salesRepo.deleteSale(sale.id);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sale deleted.')));
-      onDeleteSaved();
+      widget.onDeleteSaved();
     } on SaleCreateException catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -533,11 +571,11 @@ class _TodaySalesCard extends StatelessWidget {
   Future<void> _showEdit(BuildContext context, Sale sale) async {
     final result = await showDialog<_EditSaleResult>(
       context: context,
-      builder: (context) => _EditSaleDialog(sale: sale, paymentMethods: paymentMethods),
+      builder: (context) => _EditSaleDialog(sale: sale, paymentMethods: widget.paymentMethods),
     );
     if (!context.mounted || result == null) return;
     try {
-      await salesRepo.updateSaleFields(
+      await widget.salesRepo.updateSaleFields(
         saleId: sale.id,
         price: result.price,
         paymentMethodName: result.paymentMethodName,
@@ -545,26 +583,99 @@ class _TodaySalesCard extends StatelessWidget {
       );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Changes saved.')));
-      onEditSaved();
+      widget.onEditSaved();
     } on SaleCreateException catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final allSales = widget.sales.take(30).toList(growable: false);
+    final hasMore = allSales.length > _kSalesPreviewCount;
+    final visible = _showAllSales || !hasMore
+        ? allSales
+        : allSales.take(_kSalesPreviewCount).toList(growable: false);
+
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: Text('Today\u2019s sales', style: theme.textTheme.titleMedium)),
+                Tooltip(
+                  message: 'Latest first. Changes apply immediately.',
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.info_outline_rounded,
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (allSales.isEmpty)
+              Text(
+                'No sales recorded for today.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              Column(
+                children: [
+                  for (var i = 0; i < visible.length; i++) ...[
+                    if (i > 0) Divider(height: 1, color: theme.colorScheme.outline.withValues(alpha: 0.35)),
+                    _SaleRow(
+                      sale: visible[i],
+                      barberName: widget.barberById[visible[i].barberId]?.name ?? 'Unknown',
+                      barber: widget.barberById[visible[i].barberId],
+                      onEdit: () => _showEdit(context, visible[i]),
+                      onDelete: () => _confirmDelete(context, visible[i]),
+                    ),
+                  ],
+                  if (hasMore) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: () => setState(() => _showAllSales = !_showAllSales),
+                        child: Text(_showAllSales ? 'Show fewer' : 'Show all (${allSales.length})'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _SaleTile extends StatelessWidget {
-  const _SaleTile({
+class _SaleRow extends StatelessWidget {
+  const _SaleRow({
     required this.sale,
     required this.barberName,
-    required this.barberShare,
+    required this.barber,
     required this.onEdit,
     required this.onDelete,
   });
 
   final Sale sale;
   final String barberName;
-  final double barberShare;
+  final Barber? barber;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -578,82 +689,67 @@ class _SaleTile extends StatelessWidget {
             TimeOfDay.fromDateTime(dt.toLocal()),
             alwaysUse24HourFormat: false,
           );
-    return Card(
-      elevation: 0,
-      color: theme.colorScheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    final pay = (sale.paymentMethod ?? '').trim().isNotEmpty ? ' • ${sale.paymentMethod}' : '';
+    final meta = '$time • ${_dashboardSaleEarningsLine(sale: sale, barber: barber)}$pay';
+    final notes = (sale.notes ?? '').trim();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    barberName,
-                    style: theme.textTheme.titleMedium,
-                  ),
-                ),
+                Text(barberName, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
                 Text(
-                  '₱${formatMoney(sale.price)}',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              children: [
-                Text(
-                  'Time: $time',
+                  meta,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                Text(
-                  'Earnings (${barberShare.toStringAsFixed(0)}%): ₱${formatMoney(sale.price * (barberShare / 100))}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                if ((sale.paymentMethod ?? '').trim().isNotEmpty)
+                if (notes.isNotEmpty) ...[
+                  const SizedBox(height: 4),
                   Text(
-                    'Payment: ${sale.paymentMethod}',
+                    notes,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                ],
               ],
             ),
-            if ((sale.notes ?? '').trim().isNotEmpty) ...[
-              const SizedBox(height: 8),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
               Text(
-                sale.notes!.trim(),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+                '₱${formatMoney(sale.price)}',
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.more_vert_rounded, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                onSelected: (value) {
+                  if (value == 'edit') {
+                    onEdit();
+                  } else if (value == 'delete') {
+                    onDelete();
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
               ),
             ],
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.tonalIcon(
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Edit'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  label: const Text('Delete'),
-                ),
-              ],
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -854,7 +950,7 @@ class _EarningsRow extends StatelessWidget {
                 Text(row.barber.name, style: theme.textTheme.titleSmall),
                 const SizedBox(height: 2),
                 Text(
-                  'Sales: ₱${formatMoney(row.totalSales)} • ${row.servicesCount} services • ${row.barber.percentageShare.toStringAsFixed(0)}%',
+                  _dashboardEarningsRowSubtitle(row),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -905,9 +1001,36 @@ class _ThisMonthCard extends StatelessWidget {
           return Card(
             elevation: 0,
             color: theme.colorScheme.surfaceContainerHighest,
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: Text('This month', style: theme.textTheme.titleMedium)),
+                      Text(
+                        formatManilaMonthYearForDisplay(range.startDay),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: const LinearProgressIndicator(),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Loading month totals\u2026',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -928,7 +1051,7 @@ class _ThisMonthCard extends StatelessWidget {
                   children: [
                     Expanded(child: Text('This month', style: theme.textTheme.titleMedium)),
                     Text(
-                      range.startDay.substring(0, 7),
+                      formatManilaMonthYearForDisplay(range.startDay),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -936,14 +1059,40 @@ class _ThisMonthCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    _KpiPill(label: 'Customers', value: '${kpis.customers}'),
-                    _KpiPill(label: 'Sales', value: '₱${formatMoney(kpis.sales)}'),
-                    _KpiPill(label: 'Expenses', value: '₱${formatMoney(kpis.expenses)}'),
-                    _KpiPill(label: 'Net profit', value: '₱${formatMoney(kpis.netProfitEstimate)}'),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Total sales',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '₱${formatMoney(kpis.sales)}',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _StatGrid(
+                  cells: [
+                    (label: 'Customers', value: '${kpis.customers}'),
+                    (label: 'Expenses', value: '₱${formatMoney(kpis.expenses)}'),
+                    (label: 'Net profit', value: '₱${formatMoney(kpis.netProfitEstimate)}'),
                   ],
                 ),
               ],
@@ -992,4 +1141,3 @@ class _ErrorCard extends StatelessWidget {
     );
   }
 }
-

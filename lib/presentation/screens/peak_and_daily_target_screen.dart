@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/sales_repository.dart';
 import 'package:boy_barbershop/data/settings_repository.dart';
@@ -22,8 +23,9 @@ class _PeakAndDailyTargetScreenState extends State<PeakAndDailyTargetScreen> {
   static const _targetSalesKey = 'daily_target_sales_amount';
   static const _targetServicesKey = 'daily_target_services_count';
 
-  final _salesRepo = SalesRepository();
-  final _settings = SettingsRepository();
+  late final SalesRepository _salesRepo;
+  late final SettingsRepository _settings;
+  bool _depsInit = false;
 
   late String _day;
   late String _viewDay;
@@ -37,6 +39,16 @@ class _PeakAndDailyTargetScreenState extends State<PeakAndDailyTargetScreen> {
     super.initState();
     _day = todayManilaDay();
     _viewDay = _day;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInit) {
+      _depsInit = true;
+      _salesRepo = context.read<SalesRepository>();
+      _settings = context.read<SettingsRepository>();
+    }
   }
 
   @override
@@ -54,8 +66,6 @@ class _PeakAndDailyTargetScreenState extends State<PeakAndDailyTargetScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Peak & Daily Target', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 12),
           Card(
             elevation: 0,
             color: theme.colorScheme.surfaceContainerHighest,
@@ -614,4 +624,3 @@ String _formatMoney(double value) {
   if (fixed.endsWith('.00')) return fixed.substring(0, fixed.length - 3);
   return fixed;
 }
-

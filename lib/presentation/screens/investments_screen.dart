@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/cashflow_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
@@ -15,7 +16,6 @@ class InvestmentsScreen extends StatefulWidget {
 }
 
 class _InvestmentsScreenState extends State<InvestmentsScreen> {
-  final _cashflow = CashflowRepository();
   late String _day;
 
   @override
@@ -26,13 +26,12 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cashflow = context.read<CashflowRepository>();
     final theme = Theme.of(context);
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Investments', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 12),
           Text(
             'Owner deposits and withdrawals. These are recorded inside Cash flow for proper reconciliation.',
             style: theme.textTheme.bodySmall?.copyWith(
@@ -85,7 +84,7 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
           ),
           const SizedBox(height: 12),
           StreamBuilder<List<CashflowEntry>>(
-            stream: _cashflow.watchEntriesForDay(_day, limit: 500),
+            stream: cashflow.watchEntriesForDay(_day, limit: 500),
             builder: (context, snap) {
               if (snap.hasError) {
                 return _ErrorCard(title: 'Could not load entries', error: snap.error);
@@ -135,8 +134,9 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
     );
     if (!context.mounted || result == null) return;
 
+    final cashflow = context.read<CashflowRepository>();
     try {
-      await _cashflow.createEntry(
+      await cashflow.createEntry(
         occurredAtUtc: result.occurredAtUtc,
         occurredDayManila: result.dayManila,
         type: result.cashflowType,
@@ -179,8 +179,9 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
     );
     if (!context.mounted || ok != true) return;
 
+    final cashflow = context.read<CashflowRepository>();
     try {
-      await _cashflow.deleteEntry(entry.id);
+      await cashflow.deleteEntry(entry.id);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Transaction deleted.')),
@@ -653,4 +654,3 @@ String _formatMoney(double value) {
   if (fixed.endsWith('.00')) return fixed.substring(0, fixed.length - 3);
   return fixed;
 }
-

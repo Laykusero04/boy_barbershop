@@ -18,8 +18,6 @@ class SettingsScreen extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 10),
-            Text('Settings', style: theme.textTheme.headlineSmall),
-            const SizedBox(height: 6),
             Text(
               'Coming soon',
               style: theme.textTheme.bodyMedium?.copyWith(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/catalog_repository.dart';
 import 'package:boy_barbershop/data/sales_repository.dart';
@@ -19,8 +20,9 @@ class SalesIntelligenceScreen extends StatefulWidget {
 }
 
 class _SalesIntelligenceScreenState extends State<SalesIntelligenceScreen> {
-  final _salesRepo = SalesRepository();
-  final _catalog = CatalogRepository();
+  late final SalesRepository _salesRepo;
+  late final CatalogRepository _catalog;
+  bool _depsInit = false;
 
   late String _startDay;
   late String _endDay;
@@ -40,14 +42,22 @@ class _SalesIntelligenceScreenState extends State<SalesIntelligenceScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInit) {
+      _depsInit = true;
+      _salesRepo = context.read<SalesRepository>();
+      _catalog = context.read<CatalogRepository>();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Sales Intelligence', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 12),
           Card(
             elevation: 0,
             color: theme.colorScheme.surfaceContainerHighest,
@@ -124,7 +134,8 @@ class _SalesIntelligenceScreenState extends State<SalesIntelligenceScreen> {
             stream: _salesRepo.watchSalesForRangeUtc(
               startUtcInclusive: utcStartOfManilaDay(_viewStart),
               endUtcExclusive: utcExclusiveEndOfManilaDay(_viewEnd),
-              limit: 20000,
+              // Firestore max per query is 10,000 documents.
+              limit: 10000,
             ),
             builder: (context, salesSnap) {
               if (salesSnap.hasError) {
@@ -613,4 +624,3 @@ String _formatMoney(double value) {
   if (fixed.endsWith('.00')) return fixed.substring(0, fixed.length - 3);
   return fixed;
 }
-

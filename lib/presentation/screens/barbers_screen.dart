@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/bloc/barbers/barbers_cubit.dart';
+import 'package:boy_barbershop/bloc/barbers/barbers_state.dart';
 import 'package:boy_barbershop/data/barbers_repository.dart';
 import 'package:boy_barbershop/models/barber.dart';
 
-class BarbersScreen extends StatefulWidget {
+class BarbersScreen extends StatelessWidget {
   const BarbersScreen({super.key});
-
-  @override
-  State<BarbersScreen> createState() => _BarbersScreenState();
-}
-
-class _BarbersScreenState extends State<BarbersScreen> {
-  final _repo = BarbersRepository();
 
   @override
   Widget build(BuildContext context) {
@@ -19,60 +15,45 @@ class _BarbersScreenState extends State<BarbersScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Barbers',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _showCreateDialog,
-                icon: const Icon(Icons.person_add_alt_1_rounded),
-                label: const Text('Add barber'),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: () => _showCreateDialog(context),
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              label: const Text('Add barber'),
+            ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Tip: Deactivated barbers won’t appear in Add Sale, but stay on old sales.',
+            'Tip: Deactivated barbers won\u2019t appear in Add Sale, but stay on old sales.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
           const SizedBox(height: 16),
-          StreamBuilder<List<Barber>>(
-            stream: _repo.watchAllBarbers(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return _ErrorCard(
-                  title: 'Could not load barbers',
-                  error: snapshot.error,
-                );
-              }
-              final barbers = snapshot.data ?? const <Barber>[];
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  barbers.isEmpty) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (barbers.isEmpty) {
-                return _EmptyState(onAdd: _showCreateDialog);
-              }
-
-              return Column(
-                children: [
-                  for (final b in barbers) ...[
-                    _BarberTile(
-                      barber: b,
-                      onEdit: () => _showEditDialog(b),
-                      onDeactivate: b.isActive ? () => _confirmDeactivate(b) : null,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              );
+          BlocBuilder<BarbersCubit, BarbersState>(
+            builder: (context, state) {
+              return switch (state) {
+                BarbersLoading() =>
+                  const Center(child: CircularProgressIndicator()),
+                BarbersError(:final message) =>
+                  _ErrorCard(title: 'Could not load barbers', error: message),
+                BarbersLoaded(:final barbers) => barbers.isEmpty
+                    ? _EmptyState(onAdd: () => _showCreateDialog(context))
+                    : Column(
+                        children: [
+                          for (final b in barbers) ...[
+                            _BarberTile(
+                              barber: b,
+                              onEdit: () => _showEditDialog(context, b),
+                              onDeactivate:
+                                  b.isActive ? () => _confirmDeactivate(context, b) : null,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ],
+                      ),
+              };
             },
           ),
         ],
@@ -80,60 +61,110 @@ class _BarbersScreenState extends State<BarbersScreen> {
     );
   }
 
-  Future<void> _showCreateDialog() async {
+  Future<BarberCompensationType?> _showCompensationTypeDialog(
+      BuildContext context) async {
+    return showDialog<BarberCompensationType>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add barber'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'How is this barber paid?',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(BarberCompensationType.percentage),
+              child: const Text('Percentage of sales'),
+            ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(BarberCompensationType.dailyRate),
+              child: const Text('Daily rate'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCreateDialog(BuildContext context) async {
+    final compensationType = await _showCompensationTypeDialog(context);
+    if (!context.mounted || compensationType == null) return;
+
     final result = await showDialog<_BarberDialogResult>(
       context: context,
-      builder: (context) => const _BarberDialog(title: 'Add barber'),
+      builder: (ctx) => _BarberDialog(
+        title: 'Add barber',
+        lockedCompensationType: compensationType,
+      ),
     );
-    if (!mounted || result == null) return;
+    if (!context.mounted || result == null) return;
 
     try {
-      await _repo.createBarber(
-        name: result.name,
-        percentageShare: result.percentageShare,
-      );
-      if (!mounted) return;
+      await context.read<BarbersRepository>().createBarber(
+            name: result.name,
+            compensationType: result.compensationType,
+            percentageShare: result.percentageShare,
+            dailyRate: result.dailyRate,
+          );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Barber added.')),
       );
     } on BarberWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _showEditDialog(Barber barber) async {
+  Future<void> _showEditDialog(BuildContext context, Barber barber) async {
     final result = await showDialog<_BarberDialogResult>(
       context: context,
-      builder: (context) => _BarberDialog(
+      builder: (ctx) => _BarberDialog(
         title: 'Edit barber',
         initialName: barber.name,
+        initialCompensationType: barber.compensationType,
         initialPercentageShare: barber.percentageShare,
+        initialDailyRate: barber.dailyRate,
       ),
     );
-    if (!mounted || result == null) return;
+    if (!context.mounted || result == null) return;
 
     try {
-      await _repo.updateBarber(
-        barberId: barber.id,
-        name: result.name,
-        percentageShare: result.percentageShare,
-      );
-      if (!mounted) return;
+      await context.read<BarbersRepository>().updateBarber(
+            barberId: barber.id,
+            name: result.name,
+            compensationType: result.compensationType,
+            percentageShare: result.percentageShare,
+            dailyRate: result.dailyRate,
+          );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Changes saved.')),
       );
     } on BarberWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _confirmDeactivate(Barber barber) async {
+  Future<void> _confirmDeactivate(BuildContext context, Barber barber) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -153,16 +184,16 @@ class _BarbersScreenState extends State<BarbersScreen> {
         ],
       ),
     );
-    if (!mounted || ok != true) return;
+    if (!context.mounted || ok != true) return;
 
     try {
-      await _repo.deactivateBarber(barber.id);
-      if (!mounted) return;
+      await context.read<BarbersRepository>().deactivateBarber(barber.id);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Barber deactivated.')),
       );
     } on BarberWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
@@ -230,6 +261,10 @@ class _BarberTile extends StatelessWidget {
         ? theme.colorScheme.secondary
         : theme.colorScheme.onSurfaceVariant;
 
+    final payLine = barber.compensationType == BarberCompensationType.dailyRate
+        ? 'Daily rate: \u20B1${barber.dailyRate.toStringAsFixed(2)}'
+        : 'Share: ${barber.percentageShare.toStringAsFixed(2)}%';
+
     return Card(
       elevation: 0,
       color: theme.colorScheme.surfaceContainerHighest,
@@ -257,7 +292,7 @@ class _BarberTile extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Share: ${barber.percentageShare.toStringAsFixed(2)}%',
+              payLine,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -290,23 +325,33 @@ class _BarberTile extends StatelessWidget {
 class _BarberDialogResult {
   const _BarberDialogResult({
     required this.name,
+    required this.compensationType,
     required this.percentageShare,
+    required this.dailyRate,
   });
 
   final String name;
+  final BarberCompensationType compensationType;
   final double percentageShare;
+  final double dailyRate;
 }
 
 class _BarberDialog extends StatefulWidget {
   const _BarberDialog({
     required this.title,
     this.initialName,
+    this.initialCompensationType,
     this.initialPercentageShare,
+    this.initialDailyRate,
+    this.lockedCompensationType,
   });
 
   final String title;
   final String? initialName;
+  final BarberCompensationType? initialCompensationType;
   final double? initialPercentageShare;
+  final double? initialDailyRate;
+  final BarberCompensationType? lockedCompensationType;
 
   @override
   State<_BarberDialog> createState() => _BarberDialogState();
@@ -316,15 +361,25 @@ class _BarberDialogState extends State<_BarberDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
   late final TextEditingController _percentageController;
+  late final TextEditingController _dailyRateController;
+  late BarberCompensationType _compensationType;
 
   @override
   void initState() {
     super.initState();
+    _compensationType = widget.lockedCompensationType ??
+        widget.initialCompensationType ??
+        BarberCompensationType.percentage;
     _nameController = TextEditingController(text: widget.initialName ?? '');
     _percentageController = TextEditingController(
       text: widget.initialPercentageShare != null
           ? widget.initialPercentageShare!.toStringAsFixed(2)
           : '60.00',
+    );
+    _dailyRateController = TextEditingController(
+      text: widget.initialDailyRate != null
+          ? widget.initialDailyRate!.toStringAsFixed(2)
+          : '0.00',
     );
   }
 
@@ -332,41 +387,106 @@ class _BarberDialogState extends State<_BarberDialog> {
   void dispose() {
     _nameController.dispose();
     _percentageController.dispose();
+    _dailyRateController.dispose();
     super.dispose();
+  }
+
+  void _setCompensationType(BarberCompensationType v) {
+    setState(() => _compensationType = v);
   }
 
   @override
   Widget build(BuildContext context) {
+    final showTypePicker = widget.lockedCompensationType == null;
+
     return AlertDialog(
       title: Text(widget.title),
       content: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Name'),
-              textInputAction: TextInputAction.next,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Name is required.' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _percentageController,
-              decoration: const InputDecoration(labelText: 'Percentage share (%)'),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: false,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (showTypePicker) ...[
+                Text(
+                  'Compensation',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 8),
+                SegmentedButton<BarberCompensationType>(
+                  segments: const [
+                    ButtonSegment(
+                      value: BarberCompensationType.percentage,
+                      label: Text('Percent'),
+                      icon: Icon(Icons.percent_rounded),
+                    ),
+                    ButtonSegment(
+                      value: BarberCompensationType.dailyRate,
+                      label: Text('Daily'),
+                      icon: Icon(Icons.calendar_today_outlined),
+                    ),
+                  ],
+                  selected: {_compensationType},
+                  onSelectionChanged: (s) {
+                    if (s.isEmpty) return;
+                    _setCompensationType(s.first);
+                  },
+                ),
+                const SizedBox(height: 16),
+              ] else ...[
+                Text(
+                  _compensationType == BarberCompensationType.dailyRate
+                      ? 'Daily rate'
+                      : 'Percentage of sales',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
+                textInputAction: TextInputAction.next,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Name is required.' : null,
               ),
-              validator: (v) {
-                final value = _parsePercent(v);
-                if (value == null) return 'Enter a valid percentage.';
-                if (value < 0 || value > 100) return 'Use 0 to 100.';
-                return null;
-              },
-            ),
-          ],
+              const SizedBox(height: 12),
+              if (_compensationType == BarberCompensationType.percentage)
+                TextFormField(
+                  controller: _percentageController,
+                  decoration: const InputDecoration(labelText: 'Percentage share (%)'),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: false,
+                  ),
+                  validator: (v) {
+                    final value = _parsePercent(v);
+                    if (value == null) return 'Enter a valid percentage.';
+                    if (value < 0 || value > 100) return 'Use 0 to 100.';
+                    return null;
+                  },
+                )
+              else
+                TextFormField(
+                  controller: _dailyRateController,
+                  decoration: const InputDecoration(
+                    labelText: 'Daily rate (\u20B1)',
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: false,
+                  ),
+                  validator: (v) {
+                    final value = _parseMoney(v);
+                    if (value == null) return 'Enter a valid amount.';
+                    if (value < 0) return 'Amount cannot be negative.';
+                    return null;
+                  },
+                ),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -378,12 +498,24 @@ class _BarberDialogState extends State<_BarberDialog> {
           onPressed: () {
             final ok = _formKey.currentState?.validate() ?? false;
             if (!ok) return;
-            final percent = _parsePercent(_percentageController.text);
-            if (percent == null) return;
+            final type = widget.lockedCompensationType ?? _compensationType;
+            double percentageShare = 0;
+            double dailyRate = 0;
+            if (type == BarberCompensationType.percentage) {
+              final percent = _parsePercent(_percentageController.text);
+              if (percent == null) return;
+              percentageShare = percent;
+            } else {
+              final dr = _parseMoney(_dailyRateController.text);
+              if (dr == null) return;
+              dailyRate = dr;
+            }
             Navigator.of(context).pop(
               _BarberDialogResult(
                 name: _nameController.text,
-                percentageShare: percent,
+                compensationType: type,
+                percentageShare: percentageShare,
+                dailyRate: dailyRate,
               ),
             );
           },
@@ -395,6 +527,12 @@ class _BarberDialogState extends State<_BarberDialog> {
 }
 
 double? _parsePercent(String? raw) {
+  final cleaned = (raw ?? '').trim().replaceAll(',', '');
+  if (cleaned.isEmpty) return null;
+  return double.tryParse(cleaned);
+}
+
+double? _parseMoney(String? raw) {
   final cleaned = (raw ?? '').trim().replaceAll(',', '');
   if (cleaned.isEmpty) return null;
   return double.tryParse(cleaned);
@@ -437,4 +575,3 @@ class _ErrorCard extends StatelessWidget {
     );
   }
 }
-

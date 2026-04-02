@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/bloc/payment_methods/payment_methods_cubit.dart';
+import 'package:boy_barbershop/bloc/payment_methods/payment_methods_state.dart';
 import 'package:boy_barbershop/data/payment_methods_repository.dart';
 import 'package:boy_barbershop/models/payment_method_item.dart';
 
-class PaymentMethodsScreen extends StatefulWidget {
+class PaymentMethodsScreen extends StatelessWidget {
   const PaymentMethodsScreen({super.key});
-
-  @override
-  State<PaymentMethodsScreen> createState() => _PaymentMethodsScreenState();
-}
-
-class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
-  final _repo = PaymentMethodsRepository();
 
   @override
   Widget build(BuildContext context) {
@@ -19,20 +15,13 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Payment methods',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _showCreateDialog,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Add method'),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: () => _showCreateDialog(context),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add method'),
+            ),
           ),
           const SizedBox(height: 12),
           Text(
@@ -42,36 +31,29 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                 ),
           ),
           const SizedBox(height: 16),
-          StreamBuilder<List<PaymentMethodItem>>(
-            stream: _repo.watchAll(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return _ErrorCard(
-                  title: 'Could not load payment methods',
-                  error: snapshot.error,
-                );
-              }
-              final methods = snapshot.data ?? const <PaymentMethodItem>[];
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  methods.isEmpty) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (methods.isEmpty) {
-                return _EmptyState(onAdd: _showCreateDialog);
-              }
-
-              return Column(
-                children: [
-                  for (final m in methods) ...[
-                    _MethodTile(
-                      method: m,
-                      onEdit: () => _showEditDialog(m),
-                      onDeactivate: m.isActive ? () => _confirmDeactivate(m) : null,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              );
+          BlocBuilder<PaymentMethodsCubit, PaymentMethodsState>(
+            builder: (context, state) {
+              return switch (state) {
+                PaymentMethodsLoading() =>
+                  const Center(child: CircularProgressIndicator()),
+                PaymentMethodsError(:final message) =>
+                  _ErrorCard(title: 'Could not load payment methods', error: message),
+                PaymentMethodsLoaded(:final methods) => methods.isEmpty
+                    ? _EmptyState(onAdd: () => _showCreateDialog(context))
+                    : Column(
+                        children: [
+                          for (final m in methods) ...[
+                            _MethodTile(
+                              method: m,
+                              onEdit: () => _showEditDialog(context, m),
+                              onDeactivate:
+                                  m.isActive ? () => _confirmDeactivate(context, m) : null,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ],
+                      ),
+              };
             },
           ),
         ],
@@ -79,52 +61,57 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
     );
   }
 
-  Future<void> _showCreateDialog() async {
+  Future<void> _showCreateDialog(BuildContext context) async {
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => const _NameDialog(title: 'Add payment method'),
+      builder: (ctx) => const _NameDialog(title: 'Add payment method'),
     );
-    if (!mounted || name == null) return;
+    if (!context.mounted || name == null) return;
 
     try {
-      await _repo.create(name: name);
-      if (!mounted) return;
+      await context.read<PaymentMethodsRepository>().create(name: name);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Payment method added.')),
       );
     } on PaymentMethodWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _showEditDialog(PaymentMethodItem method) async {
+  Future<void> _showEditDialog(
+      BuildContext context, PaymentMethodItem method) async {
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => _NameDialog(
+      builder: (ctx) => _NameDialog(
         title: 'Edit payment method',
         initialValue: method.name,
       ),
     );
-    if (!mounted || name == null) return;
+    if (!context.mounted || name == null) return;
 
     try {
-      await _repo.update(id: method.id, name: name);
-      if (!mounted) return;
+      await context.read<PaymentMethodsRepository>().update(
+            id: method.id,
+            name: name,
+          );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Changes saved.')),
       );
     } on PaymentMethodWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _confirmDeactivate(PaymentMethodItem method) async {
+  Future<void> _confirmDeactivate(
+      BuildContext context, PaymentMethodItem method) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -144,16 +131,16 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
         ],
       ),
     );
-    if (!mounted || ok != true) return;
+    if (!context.mounted || ok != true) return;
 
     try {
-      await _repo.deactivate(method.id);
-      if (!mounted) return;
+      await context.read<PaymentMethodsRepository>().deactivate(method.id);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Payment method deactivated.')),
       );
     } on PaymentMethodWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
@@ -251,7 +238,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Add at least one method (Cash, GCash, Maya…).',
+              'Add at least one method (Cash, GCash, Maya\u2026).',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -370,4 +357,3 @@ class _ErrorCard extends StatelessWidget {
     );
   }
 }
-

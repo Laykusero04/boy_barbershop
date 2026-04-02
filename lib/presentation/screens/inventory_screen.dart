@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/bloc/inventory/inventory_cubit.dart';
+import 'package:boy_barbershop/bloc/inventory/inventory_state.dart';
 import 'package:boy_barbershop/data/inventory_repository.dart';
 import 'package:boy_barbershop/models/inventory_item.dart';
 
@@ -8,116 +11,90 @@ class InventoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _InventoryScreenBody();
-  }
-}
-
-class _InventoryScreenBody extends StatefulWidget {
-  const _InventoryScreenBody();
-
-  @override
-  State<_InventoryScreenBody> createState() => _InventoryScreenBodyState();
-}
-
-class _InventoryScreenBodyState extends State<_InventoryScreenBody> {
-  final _repo = InventoryRepository();
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Inventory',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _showCreateDialog,
+    final theme = Theme.of(context);
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: () => _showCreateDialog(context),
                 icon: const Icon(Icons.add_rounded),
                 label: const Text('Add item'),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Track stock and get low-stock alerts. Items marked inactive won’t be used for service inventory usage.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-          const SizedBox(height: 16),
-          StreamBuilder<List<InventoryItem>>(
-            stream: _repo.watchAllInventoryItems(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return _ErrorCard(
-                  title: 'Could not load inventory',
-                  error: snapshot.error,
-                );
-              }
-              final items = snapshot.data ?? const <InventoryItem>[];
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  items.isEmpty) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (items.isEmpty) {
-                return _EmptyState(onAdd: _showCreateDialog);
-              }
-
-              return Column(
-                children: [
-                  for (final item in items) ...[
-                    _InventoryTile(
-                      item: item,
-                      onEdit: () => _showEditDialog(item),
-                      onDeactivate: item.isActive ? () => _confirmDeactivate(item) : null,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              );
-            },
-          ),
-        ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Track stock and get low-stock alerts. Items marked inactive won\u2019t be used for service inventory usage.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+              ),
+            ),
+            const SizedBox(height: 16),
+            BlocBuilder<InventoryCubit, InventoryState>(
+              builder: (context, state) {
+                return switch (state) {
+                  InventoryLoading() =>
+                    const Center(child: CircularProgressIndicator()),
+                  InventoryError(:final message) =>
+                    _ErrorCard(title: 'Could not load inventory', error: message),
+                  InventoryLoaded(:final items) => items.isEmpty
+                      ? _EmptyState(onAdd: () => _showCreateDialog(context))
+                      : Column(
+                          children: [
+                            for (final item in items) ...[
+                              _InventoryTile(
+                                item: item,
+                                onEdit: () => _showEditDialog(context, item),
+                                onDeactivate:
+                                    item.isActive ? () => _confirmDeactivate(context, item) : null,
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                          ],
+                        ),
+                };
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Future<void> _showCreateDialog() async {
+  Future<void> _showCreateDialog(BuildContext context) async {
     final result = await showDialog<_InventoryDialogResult>(
       context: context,
-      builder: (context) => const _InventoryDialog(title: 'Add item'),
+      builder: (ctx) => const _InventoryDialog(title: 'Add item'),
     );
-    if (!mounted || result == null) return;
+    if (!context.mounted || result == null) return;
 
     try {
-      await _repo.create(
-        itemName: result.itemName,
-        stockQty: result.stockQty,
-        lowStockThreshold: result.lowStockThreshold,
-        unit: result.unit,
-      );
-      if (!mounted) return;
+      await context.read<InventoryRepository>().create(
+            itemName: result.itemName,
+            stockQty: result.stockQty,
+            lowStockThreshold: result.lowStockThreshold,
+            unit: result.unit,
+          );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Item added.')),
       );
     } on InventoryWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _showEditDialog(InventoryItem item) async {
+  Future<void> _showEditDialog(BuildContext context, InventoryItem item) async {
     final result = await showDialog<_InventoryDialogResult>(
       context: context,
-      builder: (context) => _InventoryDialog(
+      builder: (ctx) => _InventoryDialog(
         title: 'Edit item',
         initialItemName: item.itemName,
         initialStockQty: item.stockQty,
@@ -125,29 +102,30 @@ class _InventoryScreenBodyState extends State<_InventoryScreenBody> {
         initialUnit: item.unit,
       ),
     );
-    if (!mounted || result == null) return;
+    if (!context.mounted || result == null) return;
 
     try {
-      await _repo.update(
-        id: item.id,
-        itemName: result.itemName,
-        stockQty: result.stockQty,
-        lowStockThreshold: result.lowStockThreshold,
-        unit: result.unit,
-      );
-      if (!mounted) return;
+      await context.read<InventoryRepository>().update(
+            id: item.id,
+            itemName: result.itemName,
+            stockQty: result.stockQty,
+            lowStockThreshold: result.lowStockThreshold,
+            unit: result.unit,
+          );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Changes saved.')),
       );
     } on InventoryWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _confirmDeactivate(InventoryItem item) async {
+  Future<void> _confirmDeactivate(
+      BuildContext context, InventoryItem item) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -167,16 +145,16 @@ class _InventoryScreenBodyState extends State<_InventoryScreenBody> {
         ],
       ),
     );
-    if (!mounted || ok != true) return;
+    if (!context.mounted || ok != true) return;
 
     try {
-      await _repo.deactivate(item.id);
-      if (!mounted) return;
+      await context.read<InventoryRepository>().deactivate(item.id);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Item deactivated.')),
       );
     } on InventoryWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
@@ -206,9 +184,7 @@ class _InventoryTile extends StatelessWidget {
         ? theme.colorScheme.onSurfaceVariant
         : (item.isLowStock ? theme.colorScheme.error : theme.colorScheme.secondary);
 
-    final cardColor = item.isLowStock
-        ? theme.colorScheme.errorContainer
-        : theme.colorScheme.surfaceContainerHighest;
+    final cardColor = theme.colorScheme.surfaceContainerHighest;
 
     final unit = (item.unit == null || item.unit!.trim().isEmpty) ? null : item.unit!.trim();
     final stockLabel = unit == null ? _formatQty(item.stockQty) : '${_formatQty(item.stockQty)} $unit';
@@ -216,6 +192,12 @@ class _InventoryTile extends StatelessWidget {
     return Card(
       elevation: 0,
       color: cardColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: item.isLowStock
+            ? BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.55), width: 1.5)
+            : BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.32)),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -226,7 +208,9 @@ class _InventoryTile extends StatelessWidget {
                 Expanded(
                   child: Text(
                     item.itemName,
-                    style: theme.textTheme.titleMedium,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
                 ),
                 Text(
@@ -303,7 +287,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Add items you consume during services (blades, alcohol, gel…).',
+              'Add items you consume during services (blades, alcohol, gel\u2026).',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -530,4 +514,3 @@ class _ErrorCard extends StatelessWidget {
     );
   }
 }
-

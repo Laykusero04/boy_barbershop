@@ -23,16 +23,7 @@ class BarbersRepository {
         .map(
           (snap) {
             final list = snap.docs
-              .map((d) {
-                final data = d.data();
-                return Barber(
-                  id: d.id,
-                  name: ((data['name'] as String?) ?? '').trim(),
-                  percentageShare:
-                      (data['percentage_share'] as num?)?.toDouble() ?? 0,
-                  isActive: (data['is_active'] as bool?) ?? false,
-                );
-              })
+              .map((d) => Barber.fromFirestoreMap(d.id, d.data()))
               .where((b) => b.name.isNotEmpty)
               .toList(growable: false);
 
@@ -47,23 +38,38 @@ class BarbersRepository {
 
   Future<void> createBarber({
     required String name,
+    required BarberCompensationType compensationType,
     required double percentageShare,
+    required double dailyRate,
   }) async {
     final cleanedName = name.trim();
     if (cleanedName.isEmpty) {
       throw BarberWriteException('Name is required.');
     }
-    if (percentageShare.isNaN || percentageShare.isInfinite) {
-      throw BarberWriteException('Invalid percentage share.');
-    }
-    if (percentageShare < 0 || percentageShare > 100) {
-      throw BarberWriteException('Percentage share must be 0 to 100.');
+    if (compensationType == BarberCompensationType.percentage) {
+      if (percentageShare.isNaN || percentageShare.isInfinite) {
+        throw BarberWriteException('Invalid percentage share.');
+      }
+      if (percentageShare < 0 || percentageShare > 100) {
+        throw BarberWriteException('Percentage share must be 0 to 100.');
+      }
+    } else {
+      if (dailyRate.isNaN || dailyRate.isInfinite || dailyRate < 0) {
+        throw BarberWriteException('Daily rate must be a valid non-negative amount.');
+      }
     }
 
     try {
       await FirestoreCollections.barbers(_db).add({
         'name': cleanedName,
-        'percentage_share': percentageShare,
+        'compensation_type':
+            compensationType == BarberCompensationType.dailyRate ? 'daily' : 'percent',
+        'percentage_share': compensationType == BarberCompensationType.percentage
+            ? percentageShare
+            : 0.0,
+        'daily_rate': compensationType == BarberCompensationType.dailyRate
+            ? dailyRate
+            : 0.0,
         'is_active': true,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
@@ -78,7 +84,9 @@ class BarbersRepository {
   Future<void> updateBarber({
     required String barberId,
     required String name,
+    required BarberCompensationType compensationType,
     required double percentageShare,
+    required double dailyRate,
   }) async {
     final cleanedName = name.trim();
     if (barberId.trim().isEmpty) {
@@ -87,17 +95,30 @@ class BarbersRepository {
     if (cleanedName.isEmpty) {
       throw BarberWriteException('Name is required.');
     }
-    if (percentageShare.isNaN || percentageShare.isInfinite) {
-      throw BarberWriteException('Invalid percentage share.');
-    }
-    if (percentageShare < 0 || percentageShare > 100) {
-      throw BarberWriteException('Percentage share must be 0 to 100.');
+    if (compensationType == BarberCompensationType.percentage) {
+      if (percentageShare.isNaN || percentageShare.isInfinite) {
+        throw BarberWriteException('Invalid percentage share.');
+      }
+      if (percentageShare < 0 || percentageShare > 100) {
+        throw BarberWriteException('Percentage share must be 0 to 100.');
+      }
+    } else {
+      if (dailyRate.isNaN || dailyRate.isInfinite || dailyRate < 0) {
+        throw BarberWriteException('Daily rate must be a valid non-negative amount.');
+      }
     }
 
     try {
       await FirestoreCollections.barbers(_db).doc(barberId).update({
         'name': cleanedName,
-        'percentage_share': percentageShare,
+        'compensation_type':
+            compensationType == BarberCompensationType.dailyRate ? 'daily' : 'percent',
+        'percentage_share': compensationType == BarberCompensationType.percentage
+            ? percentageShare
+            : 0.0,
+        'daily_rate': compensationType == BarberCompensationType.dailyRate
+            ? dailyRate
+            : 0.0,
         'updated_at': FieldValue.serverTimestamp(),
       });
     } on FirebaseException catch (e) {
@@ -134,4 +155,3 @@ String _firestoreErrorMessage(FirebaseException e) {
       return 'Request failed (${e.code}).';
   }
 }
-

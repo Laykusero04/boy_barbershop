@@ -31,6 +31,14 @@ abstract final class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: AppColors.dirtyWhite,
       splashFactory: InkSplash.splashFactory,
+      cardTheme: CardThemeData(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: scheme.outline.withValues(alpha: 0.32)),
+        ),
+        clipBehavior: Clip.antiAlias,
+      ),
       appBarTheme: AppBarTheme(
         centerTitle: false,
         elevation: 0,

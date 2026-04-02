@@ -1,8 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:boy_barbershop/bloc/app_event.dart';
-import 'package:boy_barbershop/bloc/app_state.dart';
+import 'package:boy_barbershop/bloc/app/app_event.dart';
+import 'package:boy_barbershop/bloc/app/app_state.dart';
 import 'package:boy_barbershop/data/user_profile_repository.dart';
 
 class AppBloc extends Bloc<AppEvent, AppState> {

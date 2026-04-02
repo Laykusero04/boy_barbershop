@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/bloc/promos/promos_cubit.dart';
+import 'package:boy_barbershop/bloc/promos/promos_state.dart';
 import 'package:boy_barbershop/data/promos_repository.dart';
 import 'package:boy_barbershop/models/promo.dart';
 
-class PromosScreen extends StatefulWidget {
+class PromosScreen extends StatelessWidget {
   const PromosScreen({super.key});
-
-  @override
-  State<PromosScreen> createState() => _PromosScreenState();
-}
-
-class _PromosScreenState extends State<PromosScreen> {
-  final _repo = PromosRepository();
 
   @override
   Widget build(BuildContext context) {
@@ -19,20 +15,13 @@ class _PromosScreenState extends State<PromosScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Promos',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _showCreateDialog,
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('Add promo'),
-              ),
-            ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: () => _showCreateDialog(context),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add promo'),
+            ),
           ),
           const SizedBox(height: 12),
           Text(
@@ -42,37 +31,31 @@ class _PromosScreenState extends State<PromosScreen> {
                 ),
           ),
           const SizedBox(height: 16),
-          StreamBuilder<List<Promo>>(
-            stream: _repo.watchAll(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return _ErrorCard(
-                  title: 'Could not load promos',
-                  error: snapshot.error,
-                );
-              }
-              final promos = snapshot.data ?? const <Promo>[];
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  promos.isEmpty) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (promos.isEmpty) {
-                return _EmptyState(onAdd: _showCreateDialog);
-              }
-
-              return Column(
-                children: [
-                  for (final p in promos) ...[
-                    _PromoTile(
-                      promo: p,
-                      onEdit: () => _showEditDialog(p),
-                      onDeactivate: p.isActive ? () => _confirmDeactivate(p) : null,
-                      onActivate: !p.isActive ? () => _activate(p) : null,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              );
+          BlocBuilder<PromosCubit, PromosState>(
+            builder: (context, state) {
+              return switch (state) {
+                PromosLoading() =>
+                  const Center(child: CircularProgressIndicator()),
+                PromosError(:final message) =>
+                  _ErrorCard(title: 'Could not load promos', error: message),
+                PromosLoaded(:final promos) => promos.isEmpty
+                    ? _EmptyState(onAdd: () => _showCreateDialog(context))
+                    : Column(
+                        children: [
+                          for (final p in promos) ...[
+                            _PromoTile(
+                              promo: p,
+                              onEdit: () => _showEditDialog(context, p),
+                              onDeactivate:
+                                  p.isActive ? () => _confirmDeactivate(context, p) : null,
+                              onActivate:
+                                  !p.isActive ? () => _activate(context, p) : null,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ],
+                      ),
+              };
             },
           ),
         ],
@@ -80,36 +63,36 @@ class _PromosScreenState extends State<PromosScreen> {
     );
   }
 
-  Future<void> _showCreateDialog() async {
+  Future<void> _showCreateDialog(BuildContext context) async {
     final result = await showDialog<_PromoDialogResult>(
       context: context,
-      builder: (context) => _PromoDialog(title: 'Add promo'),
+      builder: (ctx) => _PromoDialog(title: 'Add promo'),
     );
-    if (!mounted || result == null) return;
+    if (!context.mounted || result == null) return;
     try {
-      await _repo.create(
-        name: result.name,
-        type: result.type,
-        value: result.value,
-        validFrom: result.validFrom,
-        validTo: result.validTo,
-      );
-      if (!mounted) return;
+      await context.read<PromosRepository>().create(
+            name: result.name,
+            type: result.type,
+            value: result.value,
+            validFrom: result.validFrom,
+            validTo: result.validTo,
+          );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Promo added.')),
       );
     } on PromoWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _showEditDialog(Promo promo) async {
+  Future<void> _showEditDialog(BuildContext context, Promo promo) async {
     final result = await showDialog<_PromoDialogResult>(
       context: context,
-      builder: (context) => _PromoDialog(
+      builder: (ctx) => _PromoDialog(
         title: 'Edit promo',
         initialName: promo.name,
         initialType: promo.type,
@@ -118,29 +101,29 @@ class _PromosScreenState extends State<PromosScreen> {
         initialValidTo: promo.validTo,
       ),
     );
-    if (!mounted || result == null) return;
+    if (!context.mounted || result == null) return;
     try {
-      await _repo.update(
-        id: promo.id,
-        name: result.name,
-        type: result.type,
-        value: result.value,
-        validFrom: result.validFrom,
-        validTo: result.validTo,
-      );
-      if (!mounted) return;
+      await context.read<PromosRepository>().update(
+            id: promo.id,
+            name: result.name,
+            type: result.type,
+            value: result.value,
+            validFrom: result.validFrom,
+            validTo: result.validTo,
+          );
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Changes saved.')),
       );
     } on PromoWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _confirmDeactivate(Promo promo) async {
+  Future<void> _confirmDeactivate(BuildContext context, Promo promo) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -158,31 +141,31 @@ class _PromosScreenState extends State<PromosScreen> {
         ],
       ),
     );
-    if (!mounted || ok != true) return;
+    if (!context.mounted || ok != true) return;
 
     try {
-      await _repo.deactivate(promo.id);
-      if (!mounted) return;
+      await context.read<PromosRepository>().deactivate(promo.id);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Promo deactivated.')),
       );
     } on PromoWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     }
   }
 
-  Future<void> _activate(Promo promo) async {
+  Future<void> _activate(BuildContext context, Promo promo) async {
     try {
-      await _repo.activate(promo.id);
-      if (!mounted) return;
+      await context.read<PromosRepository>().activate(promo.id);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Promo activated.')),
       );
     } on PromoWriteException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
@@ -238,7 +221,7 @@ class _PromoTile extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              '${_typeLabel(promo)} • ${promo.validFrom} → ${promo.validTo}',
+              '${_typeLabel(promo)} \u2022 ${promo.validFrom} \u2192 ${promo.validTo}',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -372,7 +355,7 @@ class _PromoDialogState extends State<_PromoDialog> {
                     ),
                     DropdownMenuItem(
                       value: PromoType.amountOff,
-                      child: Text('Amount off (₱)'),
+                      child: Text('Amount off (\u20B1)'),
                     ),
                     DropdownMenuItem(
                       value: PromoType.free,
@@ -390,8 +373,8 @@ class _PromoDialogState extends State<_PromoDialog> {
                     controller: _valueController,
                     decoration: InputDecoration(
                       labelText: _type == PromoType.percentOff
-                          ? 'Value (0–100)'
-                          : 'Value (₱)',
+                          ? 'Value (0\u2013100)'
+                          : 'Value (\u20B1)',
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     validator: (v) {
@@ -461,7 +444,7 @@ class _PromoDialogState extends State<_PromoDialog> {
     final to = _toController.text.trim();
     if (from.compareTo(to) > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('“Valid from” must be on/before “Valid to”.')),
+        const SnackBar(content: Text('"Valid from" must be on/before "Valid to".')),
       );
       return;
     }
@@ -488,7 +471,6 @@ class _PromoDialogState extends State<_PromoDialog> {
     );
     if (picked == null) return;
     controller.text = _formatDay(picked);
-    // Triggers validators to refresh immediately.
     _formKey.currentState?.validate();
   }
 }
@@ -510,7 +492,7 @@ class _EmptyState extends StatelessWidget {
             Text('No promos yet', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
-              'Create a promo like “30% off” or “₱50 off”.',
+              'Create a promo like "30% off" or "\u20B150 off".',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -569,7 +551,7 @@ String _typeLabel(Promo promo) {
     case PromoType.percentOff:
       return '${promo.value.toStringAsFixed(0)}% off';
     case PromoType.amountOff:
-      return '₱${promo.value.toStringAsFixed(0)} off';
+      return '\u20B1${promo.value.toStringAsFixed(0)} off';
     case PromoType.free:
       return 'Free';
   }
@@ -603,4 +585,3 @@ String _formatDay(DateTime date) {
   final dd = date.day.toString().padLeft(2, '0');
   return '$yyyy-$mm-$dd';
 }
-

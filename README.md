@@ -2,6 +2,12 @@
 
 A new Flutter project.
 
+## Docs
+
+- `docs/SALES.md`: how sales are stored, created/edited/deleted, and how totals/earnings are computed.
+- `docs/BARBERS.md`: barber records, pay types (percent vs daily), and how that impacts earnings.
+- `docs/PAYMENT_METHODS.md`: payment method records, how sales store them, and cash vs non-cash behavior.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

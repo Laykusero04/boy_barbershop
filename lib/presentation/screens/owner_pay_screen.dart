@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/cashflow_repository.dart';
 import 'package:boy_barbershop/data/expenses_repository.dart';
@@ -26,10 +27,11 @@ class _OwnerPayScreenState extends State<OwnerPayScreen> {
   static const _defaultBuffer = 2000.0;
   static const _matchTolerance = 0.01; // pesos
 
-  final _settings = SettingsRepository();
-  final _cashflow = CashflowRepository();
-  final _sales = SalesRepository();
-  final _expenses = ExpensesRepository();
+  late final SettingsRepository _settings;
+  late final CashflowRepository _cashflow;
+  late final SalesRepository _sales;
+  late final ExpensesRepository _expenses;
+  bool _depsInit = false;
 
   late String _day;
   late String _viewDay;
@@ -51,6 +53,18 @@ class _OwnerPayScreenState extends State<OwnerPayScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInit) {
+      _depsInit = true;
+      _settings = context.read<SettingsRepository>();
+      _cashflow = context.read<CashflowRepository>();
+      _sales = context.read<SalesRepository>();
+      _expenses = context.read<ExpensesRepository>();
+    }
+  }
+
+  @override
   void dispose() {
     _actualCashController.dispose();
     _bufferController.dispose();
@@ -64,8 +78,6 @@ class _OwnerPayScreenState extends State<OwnerPayScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Owner pay & insights', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 12),
           StreamBuilder<double>(
             stream: _settings.watchDouble(_bufferKey, defaultValue: _defaultBuffer),
             builder: (context, snap) {
@@ -832,4 +844,3 @@ String _formatMoney(double value) {
   if (fixed.endsWith('.00')) return fixed.substring(0, fixed.length - 3);
   return fixed;
 }
-

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/sales_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
@@ -17,7 +18,8 @@ class ActivityByHourScreen extends StatefulWidget {
 }
 
 class _ActivityByHourScreenState extends State<ActivityByHourScreen> {
-  final _salesRepo = SalesRepository();
+  late final SalesRepository _salesRepo;
+  bool _depsInit = false;
 
   late String _startDay;
   late String _endDay;
@@ -38,6 +40,15 @@ class _ActivityByHourScreenState extends State<ActivityByHourScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInit) {
+      _depsInit = true;
+      _salesRepo = context.read<SalesRepository>();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final days = daysBetweenInclusive(_viewStart, _viewEnd);
@@ -46,8 +57,6 @@ class _ActivityByHourScreenState extends State<ActivityByHourScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Activity (by hour)', style: theme.textTheme.headlineSmall),
-          const SizedBox(height: 12),
           Card(
             elevation: 0,
             color: theme.colorScheme.surfaceContainerHighest,
@@ -490,4 +499,3 @@ String _formatMoney(double value) {
 extension<T> on Set<T> {
   T? get firstOrNull => isEmpty ? null : first;
 }
-

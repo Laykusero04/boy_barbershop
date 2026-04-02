@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/data/catalog_repository.dart';
-import 'package:boy_barbershop/data/cashflow_repository.dart';
 import 'package:boy_barbershop/data/promos_repository.dart';
 import 'package:boy_barbershop/data/sales_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
@@ -12,20 +12,57 @@ import 'package:boy_barbershop/models/sale.dart';
 import 'package:boy_barbershop/models/sale_create.dart';
 import 'package:boy_barbershop/models/service_item.dart';
 
-class AddSaleScreen extends StatefulWidget {
-  const AddSaleScreen({super.key, required this.user});
-
-  final AppUser user;
-
-  @override
-  State<AddSaleScreen> createState() => _AddSaleScreenState();
+/// Opens the same add-sale form as [AddSaleScreen]’s first tab, in a dialog.
+Future<void> showAddSaleDialog(BuildContext context, {required AppUser user}) {
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: const Text('Add sale'),
+        content: SingleChildScrollView(
+          child: AddSaleForm(
+            user: user,
+            onSaved: () => Navigator.of(dialogContext).pop(),
+            useFormCard: false,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      );
+    },
+  );
 }
 
-class _AddSaleScreenState extends State<AddSaleScreen> {
+/// Shared form for creating a sale (full [AddSaleScreen] tab or [showAddSaleDialog]).
+class AddSaleForm extends StatefulWidget {
+  const AddSaleForm({
+    super.key,
+    required this.user,
+    this.onSaved,
+    this.useFormCard = true,
+  });
+
+  final AppUser user;
+  final VoidCallback? onSaved;
+
+  /// When false (e.g. dialog), fields sit on the dialog surface without an inner [Card].
+  final bool useFormCard;
+
+  @override
+  State<AddSaleForm> createState() => _AddSaleFormState();
+}
+
+class _AddSaleFormState extends State<AddSaleForm> {
   final _formKey = GlobalKey<FormState>();
-  final _catalogRepo = CatalogRepository();
-  final _salesRepo = SalesRepository(cashflow: CashflowRepository());
-  final _promosRepo = PromosRepository();
+
+  late final CatalogRepository _catalogRepo;
+  late final SalesRepository _salesRepo;
+  late final PromosRepository _promosRepo;
+  bool _depsInitialized = false;
 
   final _priceController = TextEditingController();
   final _notesController = TextEditingController();
@@ -39,13 +76,15 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
   bool _isSaving = false;
 
-  late String _salesDay;
-  int _salesRows = 20;
-
   @override
-  void initState() {
-    super.initState();
-    _salesDay = _todayManilaDay();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInitialized) {
+      _depsInitialized = true;
+      _catalogRepo = context.read<CatalogRepository>();
+      _salesRepo = context.read<SalesRepository>();
+      _promosRepo = context.read<PromosRepository>();
+    }
   }
 
   @override
@@ -53,205 +92,6 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
     _priceController.dispose();
     _notesController.dispose();
     super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Sales', style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 12),
-                  TabBar(
-                    isScrollable: true,
-                    tabs: const [
-                      Tab(text: 'Add sale'),
-                      Tab(text: 'Sales'),
-                      Tab(text: 'Daily breakdown'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _buildAddSaleTab(context),
-                  _SalesForDateTab(
-                    catalogRepo: _catalogRepo,
-                    salesRepo: _salesRepo,
-                    initialSaleDay: _salesDay,
-                    initialRows: _salesRows,
-                    onSaleDayChanged: (v) => setState(() => _salesDay = v),
-                    onRowsChanged: (v) => setState(() => _salesRows = v),
-                  ),
-                  _DailyBreakdownTab(
-                    catalogRepo: _catalogRepo,
-                    salesRepo: _salesRepo,
-                    initialSaleDay: _salesDay,
-                    onSaleDayChanged: (v) => setState(() => _salesDay = v),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAddSaleTab(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Card(
-          elevation: 0,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  _BarberField(
-                    stream: _catalogRepo.watchActiveBarbers(),
-                    value: _selectedBarberId,
-                    onChanged: (id) => setState(() => _selectedBarberId = id),
-                  ),
-                  const SizedBox(height: 12),
-                  _ServiceField(
-                    stream: _catalogRepo.watchActiveServices(),
-                    value: _selectedServiceId,
-                    onChanged: (service) {
-                      setState(() => _selectedServiceId = service?.id);
-                      if (service != null) {
-                        _priceController.text = _formatMoney(service.defaultPrice);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _priceController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      signed: false,
-                      decimal: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: 'Price (amount to charge)',
-                      hintText: '0.00',
-                    ),
-                    readOnly: _selectedPromoId != null,
-                    validator: (value) {
-                      final parsed = _parsePrice(value);
-                      if (parsed == null) return 'Enter a valid price.';
-                      if (parsed < 0) return 'Price must be 0 or greater.';
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _PromoField(
-                    stream: _promosRepo.watchActiveValidForDay(_todayManilaDay()),
-                    value: _selectedPromoId,
-                    onChanged: (promo) {
-                      if (promo == null) {
-                        setState(() {
-                          _selectedPromoId = null;
-                          _promoOriginalPrice = null;
-                          _promoDiscountAmount = null;
-                        });
-                        return;
-                      }
-
-                      final current = _parsePrice(_priceController.text);
-                      if (current == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Enter a price before applying a promo.'),
-                          ),
-                        );
-                        return;
-                      }
-
-                      final result = _applyPromo(
-                        original: current,
-                        type: promo.type,
-                        value: promo.value,
-                      );
-
-                      setState(() {
-                        _selectedPromoId = promo.id;
-                        _promoOriginalPrice = current;
-                        _promoDiscountAmount = result.discountAmount;
-                        _priceController.text = _formatMoney(result.finalPrice);
-                      });
-                    },
-                    onClear: _selectedPromoId == null
-                        ? null
-                        : () {
-                            final restore = _promoOriginalPrice;
-                            setState(() {
-                              _selectedPromoId = null;
-                              _promoOriginalPrice = null;
-                              _promoDiscountAmount = null;
-                              if (restore != null) {
-                                _priceController.text = _formatMoney(restore);
-                              }
-                            });
-                          },
-                  ),
-                  const SizedBox(height: 12),
-                  _PaymentMethodField(
-                    stream: _catalogRepo.watchActivePaymentMethods(),
-                    value: _selectedPaymentMethodName,
-                    onChanged: (value) =>
-                        setState(() => _selectedPaymentMethodName = value),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _notesController,
-                    decoration: const InputDecoration(
-                      labelText: 'Notes (optional)',
-                    ),
-                    maxLines: 2,
-                    textInputAction: TextInputAction.done,
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _isSaving ? null : _save,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.check_rounded),
-                      label: Text(_isSaving ? 'Saving...' : 'Save sale'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Tip: Services auto-fill the default price. You can still edit it.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-        ),
-      ],
-    );
   }
 
   Future<void> _save() async {
@@ -284,14 +124,18 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
         SnackBar(content: Text('Sale saved (#$saleId).')),
       );
 
-      setState(() {
-        _selectedServiceId = null;
-        _selectedPromoId = null;
-        _promoOriginalPrice = null;
-        _promoDiscountAmount = null;
-        _priceController.clear();
-        _notesController.clear();
-      });
+      widget.onSaved?.call();
+
+      if (widget.onSaved == null) {
+        setState(() {
+          _selectedServiceId = null;
+          _selectedPromoId = null;
+          _promoOriginalPrice = null;
+          _promoDiscountAmount = null;
+          _priceController.clear();
+          _notesController.clear();
+        });
+      }
     } on SaleCreateException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -301,20 +145,247 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
       if (mounted) setState(() => _isSaving = false);
     }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final form = Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _BarberField(
+            stream: _catalogRepo.watchActiveBarbers(),
+            value: _selectedBarberId,
+            onChanged: (id) => setState(() => _selectedBarberId = id),
+          ),
+          const SizedBox(height: 12),
+          _ServiceField(
+            stream: _catalogRepo.watchActiveServices(),
+            value: _selectedServiceId,
+            onChanged: (service) {
+              setState(() => _selectedServiceId = service?.id);
+              if (service != null) {
+                _priceController.text = _formatMoney(service.defaultPrice);
+              }
+            },
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _priceController,
+            keyboardType: const TextInputType.numberWithOptions(
+              signed: false,
+              decimal: true,
+            ),
+            decoration: const InputDecoration(
+              labelText: 'Price (amount to charge)',
+              hintText: '0.00',
+            ),
+            readOnly: _selectedPromoId != null,
+            validator: (value) {
+              final parsed = _parsePrice(value);
+              if (parsed == null) return 'Enter a valid price.';
+              if (parsed < 0) return 'Price must be 0 or greater.';
+              return null;
+            },
+          ),
+          const SizedBox(height: 12),
+          _PromoField(
+            stream: _promosRepo.watchActiveValidForDay(_todayManilaDay()),
+            value: _selectedPromoId,
+            onChanged: (promo) {
+              if (promo == null) {
+                setState(() {
+                  _selectedPromoId = null;
+                  _promoOriginalPrice = null;
+                  _promoDiscountAmount = null;
+                });
+                return;
+              }
+
+              final current = _parsePrice(_priceController.text);
+              if (current == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Enter a price before applying a promo.'),
+                  ),
+                );
+                return;
+              }
+
+              final result = _applyPromo(
+                original: current,
+                type: promo.type,
+                value: promo.value,
+              );
+
+              setState(() {
+                _selectedPromoId = promo.id;
+                _promoOriginalPrice = current;
+                _promoDiscountAmount = result.discountAmount;
+                _priceController.text = _formatMoney(result.finalPrice);
+              });
+            },
+            onClear: _selectedPromoId == null
+                ? null
+                : () {
+                    final restore = _promoOriginalPrice;
+                    setState(() {
+                      _selectedPromoId = null;
+                      _promoOriginalPrice = null;
+                      _promoDiscountAmount = null;
+                      if (restore != null) {
+                        _priceController.text = _formatMoney(restore);
+                      }
+                    });
+                  },
+          ),
+          const SizedBox(height: 12),
+          _PaymentMethodField(
+            stream: _catalogRepo.watchActivePaymentMethods(),
+            value: _selectedPaymentMethodName,
+            onChanged: (value) => setState(() => _selectedPaymentMethodName = value),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _notesController,
+            decoration: const InputDecoration(
+              labelText: 'Notes (optional)',
+            ),
+            maxLines: 2,
+            textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _isSaving ? null : _save,
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_rounded),
+              label: Text(_isSaving ? 'Saving...' : 'Save sale'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.useFormCard)
+          Card(
+            elevation: 0,
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: form,
+            ),
+          )
+        else
+          form,
+        SizedBox(height: widget.useFormCard ? 12 : 8),
+        Text(
+          'Tip: Services auto-fill the default price. You can still edit it.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class AddSaleScreen extends StatefulWidget {
+  const AddSaleScreen({super.key, required this.user});
+
+  final AppUser user;
+
+  @override
+  State<AddSaleScreen> createState() => _AddSaleScreenState();
+}
+
+class _AddSaleScreenState extends State<AddSaleScreen> {
+  late String _salesDay;
+  int _salesRows = 20;
+
+  @override
+  void initState() {
+    super.initState();
+    _salesDay = _todayManilaDay();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TabBar(
+                      isScrollable: true,
+                      tabs: const [
+                        Tab(text: 'Add sale'),
+                        Tab(text: 'Sales'),
+                        Tab(text: 'Daily breakdown'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    ListView(
+                      padding: const EdgeInsets.all(20),
+                      children: [
+                        AddSaleForm(user: widget.user),
+                      ],
+                    ),
+                    _SalesForDateTab(
+                      initialSaleDay: _salesDay,
+                      initialRows: _salesRows,
+                      onSaleDayChanged: (v) => setState(() => _salesDay = v),
+                      onRowsChanged: (v) => setState(() => _salesRows = v),
+                    ),
+                    _DailyBreakdownTab(
+                      initialSaleDay: _salesDay,
+                      onSaleDayChanged: (v) => setState(() => _salesDay = v),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SalesForDateTab extends StatefulWidget {
   const _SalesForDateTab({
-    required this.catalogRepo,
-    required this.salesRepo,
     required this.initialSaleDay,
     required this.initialRows,
     required this.onSaleDayChanged,
     required this.onRowsChanged,
   });
 
-  final CatalogRepository catalogRepo;
-  final SalesRepository salesRepo;
   final String initialSaleDay;
   final int initialRows;
   final ValueChanged<String> onSaleDayChanged;
@@ -325,6 +396,10 @@ class _SalesForDateTab extends StatefulWidget {
 }
 
 class _SalesForDateTabState extends State<_SalesForDateTab> {
+  late final CatalogRepository _catalogRepo;
+  late final SalesRepository _salesRepo;
+  bool _depsInitialized = false;
+
   late String _day;
   late int _rows;
   late String _viewDay;
@@ -337,6 +412,16 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
     _rows = widget.initialRows;
     _viewDay = _day;
     _viewRows = _rows;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_depsInitialized) {
+      _depsInitialized = true;
+      _catalogRepo = context.read<CatalogRepository>();
+      _salesRepo = context.read<SalesRepository>();
+    }
   }
 
   @override
@@ -406,7 +491,7 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
         ),
         const SizedBox(height: 12),
         StreamBuilder<List<Barber>>(
-          stream: widget.catalogRepo.watchActiveBarbers(),
+          stream: _catalogRepo.watchActiveBarbers(),
           builder: (context, barbersSnap) {
             if (barbersSnap.hasError) {
               return _ErrorCard(
@@ -418,7 +503,7 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
             final barberById = {for (final b in barbers) b.id: b};
 
             return StreamBuilder<List<ServiceItem>>(
-              stream: widget.catalogRepo.watchActiveServices(),
+              stream: _catalogRepo.watchActiveServices(),
               builder: (context, servicesSnap) {
                 if (servicesSnap.hasError) {
                   return _ErrorCard(
@@ -430,7 +515,7 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
                 final serviceById = {for (final s in services) s.id: s};
 
                 return StreamBuilder<List<Sale>>(
-                  stream: widget.salesRepo.watchSalesForDay(
+                  stream: _salesRepo.watchSalesForDay(
                     _viewDay,
                     limit: _viewRows,
                   ),
@@ -459,8 +544,7 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
                           _SaleTile(
                             sale: sale,
                             barberName: barberById[sale.barberId]?.name ?? 'Unknown',
-                            barberShare: barberById[sale.barberId]?.percentageShare ??
-                                0.0,
+                            barber: barberById[sale.barberId],
                             serviceName:
                                 serviceById[sale.serviceId]?.name ?? 'Unknown',
                             onEdit: () => _showEditSaleDialog(context, sale),
@@ -501,7 +585,7 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
     if (!context.mounted || ok != true) return;
 
     try {
-      await widget.salesRepo.deleteSale(sale.id);
+      await _salesRepo.deleteSale(sale.id);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Sale deleted.')),
@@ -515,17 +599,18 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
   }
 
   Future<void> _showEditSaleDialog(BuildContext context, Sale sale) async {
+    final paymentMethodsStream = _catalogRepo.watchActivePaymentMethods();
     final result = await showDialog<_EditSaleResult>(
       context: context,
       builder: (context) => _EditSaleDialog(
         sale: sale,
-        paymentMethods: widget.catalogRepo.watchActivePaymentMethods(),
+        paymentMethods: paymentMethodsStream,
       ),
     );
     if (!context.mounted || result == null) return;
 
     try {
-      await widget.salesRepo.updateSaleFields(
+      await _salesRepo.updateSaleFields(
         saleId: sale.id,
         price: result.price,
         paymentMethodName: result.paymentMethodName,
@@ -546,14 +631,10 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
 
 class _DailyBreakdownTab extends StatefulWidget {
   const _DailyBreakdownTab({
-    required this.catalogRepo,
-    required this.salesRepo,
     required this.initialSaleDay,
     required this.onSaleDayChanged,
   });
 
-  final CatalogRepository catalogRepo;
-  final SalesRepository salesRepo;
   final String initialSaleDay;
   final ValueChanged<String> onSaleDayChanged;
 
@@ -627,8 +708,6 @@ class _DailyBreakdownTabState extends State<_DailyBreakdownTab> {
         ),
         const SizedBox(height: 12),
         _BreakdownPreview(
-          catalogRepo: widget.catalogRepo,
-          salesRepo: widget.salesRepo,
           saleDay: _viewDay,
         ),
       ],
@@ -640,14 +719,14 @@ class _DailyBreakdownTabState extends State<_DailyBreakdownTab> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Padding(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
           ),
           child: _DailyBreakdownSheet(
-            catalogRepo: widget.catalogRepo,
-            salesRepo: widget.salesRepo,
+            catalogRepo: context.read<CatalogRepository>(),
+            salesRepo: context.read<SalesRepository>(),
             initialSaleDay: _viewDay,
             onSaleDayChanged: (v) {
               setState(() {
@@ -665,20 +744,16 @@ class _DailyBreakdownTabState extends State<_DailyBreakdownTab> {
 
 class _BreakdownPreview extends StatelessWidget {
   const _BreakdownPreview({
-    required this.catalogRepo,
-    required this.salesRepo,
     required this.saleDay,
   });
 
-  final CatalogRepository catalogRepo;
-  final SalesRepository salesRepo;
   final String saleDay;
 
   @override
   Widget build(BuildContext context) {
     return _DailyBreakdownContent(
-      catalogRepo: catalogRepo,
-      salesRepo: salesRepo,
+      catalogRepo: context.read<CatalogRepository>(),
+      salesRepo: context.read<SalesRepository>(),
       saleDay: saleDay,
       compact: true,
     );
@@ -875,7 +950,7 @@ class _DailyBreakdownContent extends StatelessWidget {
                                     ),
                                   ),
                                   Text(
-                                    'Earnings (${barber.percentageShare.toStringAsFixed(0)}%): ₱${_formatMoney(barber.earnings)}',
+                                    _barberEarningsSummaryLine(barber),
                                     style: theme.textTheme.bodyMedium?.copyWith(
                                       color: theme.colorScheme.onSurfaceVariant,
                                     ),
@@ -925,7 +1000,7 @@ class _BreakdownBarber {
   const _BreakdownBarber({
     required this.barberId,
     required this.barberName,
-    required this.percentageShare,
+    required this.barber,
     required this.servicesCount,
     required this.salesTotal,
     required this.earnings,
@@ -934,7 +1009,7 @@ class _BreakdownBarber {
 
   final String barberId;
   final String barberName;
-  final double percentageShare;
+  final Barber? barber;
   final int servicesCount;
   final double salesTotal;
   final double earnings;
@@ -969,11 +1044,18 @@ List<_BreakdownBarber> _computeBreakdown({
   byBarber.forEach((barberId, barberSales) {
     final barber = barberById[barberId];
     final barberName = barber?.name ?? 'Unknown';
-    final share = barber?.percentageShare ?? 0.0;
 
     final totalSales = barberSales.fold<double>(0.0, (sum, s) => sum + s.price);
     final servicesCount = barberSales.length;
-    final earnings = totalSales * (share / 100);
+    final earnings = barber != null &&
+            barber.compensationType == BarberCompensationType.dailyRate
+        ? barber.dailyRate *
+            barberSales
+                .map((s) => s.saleDay)
+                .where((d) => d.trim().isNotEmpty)
+                .toSet()
+                .length
+        : totalSales * ((barber?.percentageShare ?? 0.0) / 100);
 
     final byService = <String, List<Sale>>{};
     for (final s in barberSales) {
@@ -999,7 +1081,7 @@ List<_BreakdownBarber> _computeBreakdown({
       _BreakdownBarber(
         barberId: barberId,
         barberName: barberName,
-        percentageShare: share,
+        barber: barber,
         servicesCount: servicesCount,
         salesTotal: totalSales,
         earnings: earnings,
@@ -1012,11 +1094,30 @@ List<_BreakdownBarber> _computeBreakdown({
   return out;
 }
 
+String _barberEarningsSummaryLine(_BreakdownBarber barber) {
+  final b = barber.barber;
+  if (b != null && b.compensationType == BarberCompensationType.dailyRate) {
+    return 'Earnings (daily ₱${_formatMoney(b.dailyRate)}): ₱${_formatMoney(barber.earnings)}';
+  }
+  final pct = b?.percentageShare ?? 0.0;
+  return 'Earnings (${pct.toStringAsFixed(0)}%): ₱${_formatMoney(barber.earnings)}';
+}
+
+String _saleRowEarningsLine({required Sale sale, required Barber? barber}) {
+  if (barber != null &&
+      barber.compensationType == BarberCompensationType.dailyRate) {
+    return 'Daily rate: ₱${_formatMoney(barber.dailyRate)} / day';
+  }
+  final share = barber?.percentageShare ?? 0.0;
+  final earn = sale.price * (share / 100);
+  return 'Earnings (${share.toStringAsFixed(0)}%): ₱${_formatMoney(earn)}';
+}
+
 class _SaleTile extends StatelessWidget {
   const _SaleTile({
     required this.sale,
     required this.barberName,
-    required this.barberShare,
+    required this.barber,
     required this.serviceName,
     required this.onEdit,
     required this.onDelete,
@@ -1024,7 +1125,7 @@ class _SaleTile extends StatelessWidget {
 
   final Sale sale;
   final String barberName;
-  final double barberShare;
+  final Barber? barber;
   final String serviceName;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -1075,7 +1176,7 @@ class _SaleTile extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Earnings (${barberShare.toStringAsFixed(0)}%): ₱${_formatMoney(sale.price * (barberShare / 100))}',
+                  _saleRowEarningsLine(sale: sale, barber: barber),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -1730,4 +1831,3 @@ class _StreamErrorTile extends StatelessWidget {
     );
   }
 }
-

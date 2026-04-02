@@ -142,23 +142,30 @@ class SalesRepository {
     return out;
   }
 
+  /// Firestore structured queries reject [limit] above 10,000 (`invalid-argument`).
+  static const int _maxFirestoreQueryLimit = 10000;
+
   Stream<List<Sale>> watchSalesForRangeUtc({
     required DateTime startUtcInclusive,
     required DateTime endUtcExclusive,
     int limit = 5000,
   }) {
     final safeLimit = limit <= 0 ? 5000 : limit;
+    final cappedLimit = safeLimit > _maxFirestoreQueryLimit
+        ? _maxFirestoreQueryLimit
+        : safeLimit;
     dev.log(
       'watchSalesForRangeUtc',
       name: 'SalesRepository',
-      error: 'startUtcInclusive=$startUtcInclusive endUtcExclusive=$endUtcExclusive limit=$safeLimit',
+      error: 'startUtcInclusive=$startUtcInclusive endUtcExclusive=$endUtcExclusive '
+          'limit=$cappedLimit${safeLimit > _maxFirestoreQueryLimit ? ' (capped from $safeLimit)' : ''}',
     );
 
     return FirestoreCollections.sales(_db)
         .where('sale_datetime', isGreaterThanOrEqualTo: startUtcInclusive)
         .where('sale_datetime', isLessThan: endUtcExclusive)
         .orderBy('sale_datetime', descending: true)
-        .limit(safeLimit)
+        .limit(cappedLimit)
         .snapshots()
         .handleError((error, stack) {
           if (error is FirebaseException) {
@@ -177,7 +184,7 @@ class SalesRepository {
             );
           }
           dev.log(
-            'Query params: startUtcInclusive=$startUtcInclusive endUtcExclusive=$endUtcExclusive limit=$safeLimit',
+            'Query params: startUtcInclusive=$startUtcInclusive endUtcExclusive=$endUtcExclusive limit=$cappedLimit',
             name: 'SalesRepository',
           );
         })

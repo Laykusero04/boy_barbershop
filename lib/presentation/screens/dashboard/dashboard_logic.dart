@@ -19,9 +19,20 @@ double computeBarberShareTotal({
   required Map<String, Barber> barberById,
 }) {
   var total = 0.0;
+  final dailyBarberDays = <String>{};
   for (final s in sales) {
-    final share = barberById[s.barberId]?.percentageShare ?? 0.0;
-    total += s.price * (share / 100.0);
+    final b = barberById[s.barberId];
+    if (b == null) continue;
+    if (b.compensationType == BarberCompensationType.dailyRate) {
+      final day = s.saleDay.trim();
+      if (day.isEmpty) continue;
+      final key = '${s.barberId}|$day';
+      if (dailyBarberDays.add(key)) {
+        total += b.dailyRate;
+      }
+    } else {
+      total += s.price * (b.percentageShare / 100.0);
+    }
   }
   return total;
 }
@@ -84,7 +95,13 @@ List<BarberEarningsRow> computeEarningsRows({
   final rows = <BarberEarningsRow>[];
   for (final b in active) {
     final totalSales = totals[b.id] ?? 0.0;
-    final earnings = totalSales * (b.percentageShare / 100.0);
+    final barberSales = sales.where((s) => s.barberId == b.id).toList();
+    final earnings = b.compensationType == BarberCompensationType.dailyRate
+        ? (barberSales.isEmpty
+            ? 0.0
+            : b.dailyRate *
+                barberSales.map((s) => s.saleDay).where((d) => d.trim().isNotEmpty).toSet().length)
+        : totalSales * (b.percentageShare / 100.0);
     rows.add(
       BarberEarningsRow(
         barber: b,
@@ -144,4 +161,3 @@ List<DashboardAlert> buildAlerts({
   final end = nextMonth.subtract(const Duration(days: 1));
   return (startDay: yyyyMmDd(start), endDay: yyyyMmDd(end));
 }
-

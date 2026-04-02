@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for d:*)",
+      "Bash(do rmdir:*)",
+      "Bash(echo \"Removed $d\")",
+      "Bash(echo \"Not empty or not found: $d\")",
+      "Bash(done)",
+      "Bash(flutter analyze:*)"
+    ]
+  }
+}
