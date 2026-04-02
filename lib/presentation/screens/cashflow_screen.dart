@@ -36,11 +36,25 @@ class _CashflowScreenState extends State<CashflowScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const TabBar(
-                    isScrollable: true,
-                    tabs: [
-                      Tab(text: 'Ledger'),
-                      Tab(text: 'Daily summary'),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: TabBar(
+                          isScrollable: true,
+                          tabs: [
+                            Tab(text: 'Ledger'),
+                            Tab(text: 'Daily summary'),
+                          ],
+                        ),
+                      ),
+                      Tooltip(
+                        message: 'What is Cash flow?',
+                        child: IconButton(
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.help_outline_rounded),
+                          onPressed: () => _showCashflowHelpDialog(context),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -112,6 +126,13 @@ class _CashflowLedgerTabState extends State<_CashflowLedgerTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Ledger', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text(
+                  'All cash-in and cash-out lines for this shop day—both entries added here and ones created automatically from cash sales and recorded expenses. Totals reflect physical cash movement, not full shop revenue (non-cash sales are not included).',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -161,7 +182,8 @@ class _CashflowLedgerTabState extends State<_CashflowLedgerTab> {
             if (items.isEmpty) {
               return _EmptyStateCard(
                 title: 'No entries for this day.',
-                subtitle: 'Add opening cash, expenses, withdrawals, and adjustments.',
+                subtitle:
+                    'Cash sales (paid in cash) and expenses can appear here automatically when you record them elsewhere. You can also add opening cash, withdrawals, and other lines with Add entry.',
               );
             }
 
@@ -745,13 +767,6 @@ class _CashflowTile extends StatelessWidget {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                if ((entry.referenceSaleId ?? '').trim().isNotEmpty)
-                  Text(
-                    'Sale: #${entry.referenceSaleId}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
               ],
             ),
             if ((entry.notes ?? '').trim().isNotEmpty) ...[
@@ -1094,6 +1109,69 @@ class _ErrorCard extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showCashflowHelpDialog(BuildContext context) {
+  final theme = Theme.of(context);
+  final muted = theme.colorScheme.onSurfaceVariant;
+  final bodyStyle = theme.textTheme.bodyMedium;
+  final bulletStyle = bodyStyle?.copyWith(height: 1.45);
+
+  showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      return AlertDialog(
+        title: const Text('About Cash flow'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Cash flow tracks physical cash in the drawer for each shop day (Manila date). It is separate from total sales, because card and other non-cash payments do not add cash to the drawer.',
+                style: bulletStyle,
+              ),
+              const SizedBox(height: 16),
+              Text('Automatic entries', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Text(
+                '• Cash-in when a sale is paid with a cash-like method.\n'
+                '• Cash-out when you save an expense (keeps the ledger aligned with money leaving cash).',
+                style: bulletStyle?.copyWith(color: muted),
+              ),
+              const SizedBox(height: 16),
+              Text('Manual entries', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Text(
+                '• Opening cash or float, supplies, withdrawals, and other adjustments—use Add entry or the over/short flow on Daily summary.',
+                style: bulletStyle?.copyWith(color: muted),
+              ),
+              const SizedBox(height: 16),
+              Text('Ledger tab', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Text(
+                'See every line for the day and cash-in / cash-out / net totals.',
+                style: bulletStyle?.copyWith(color: muted),
+              ),
+              const SizedBox(height: 16),
+              Text('Daily summary tab', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Text(
+                'Compare expected closing cash (opening + net flow) to what you actually counted. If they differ, record an over/short adjustment with a note.',
+                style: bulletStyle?.copyWith(color: muted),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 double? _parseMoney(String? raw) {

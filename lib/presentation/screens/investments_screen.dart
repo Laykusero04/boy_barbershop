@@ -28,29 +28,73 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
   Widget build(BuildContext context) {
     final cashflow = context.read<CashflowRepository>();
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
-          Text(
-            'Owner deposits and withdrawals. These are recorded inside Cash flow for proper reconciliation.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Icon(Icons.savings_outlined, color: scheme.onPrimaryContainer, size: 26),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Owner capital',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Record money you add to or take from the shop. Entries sync to Cash flow for the same day.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Tooltip(
+                message: 'About owner transactions',
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.help_outline_rounded),
+                  onPressed: () => _showInvestmentsHelpDialog(context),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           Card(
             elevation: 0,
-            color: theme.colorScheme.surfaceContainerHighest,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            color: scheme.surfaceContainerHighest,
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Add owner transaction', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 12),
+                  Text('Add transaction', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Choose deposit (cash in) or withdrawal (cash out).',
+                    style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 14),
                   _DateField(
-                    label: 'Date',
+                    label: 'Day to view & record',
                     value: _day,
                     onPick: () async {
                       final picked = await _pickDay(context, initial: _day);
@@ -58,31 +102,48 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
                       setState(() => _day = picked);
                     },
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => _openDialog(context, type: _OwnerTxnType.deposit),
-                          icon: const Icon(Icons.add_rounded),
-                          label: const Text('Owner deposit'),
-                        ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        alignment: Alignment.center,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton.tonalIcon(
-                          onPressed: () => _openDialog(context, type: _OwnerTxnType.withdrawal),
-                          icon: const Icon(Icons.remove_rounded),
-                          label: const Text('Owner withdrawal'),
-                        ),
+                      onPressed: () => _openDialog(context, type: _OwnerTxnType.deposit),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Owner deposit'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        alignment: Alignment.center,
                       ),
-                    ],
+                      onPressed: () => _openDialog(context, type: _OwnerTxnType.withdrawal),
+                      icon: const Icon(Icons.remove_rounded),
+                      label: const Text('Owner withdrawal'),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+            child: Text(
+              'Activity',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           StreamBuilder<List<CashflowEntry>>(
             stream: cashflow.watchEntriesForDay(_day, limit: 500),
             builder: (context, snap) {
@@ -98,8 +159,10 @@ class _InvestmentsScreenState extends State<InvestmentsScreen> {
               }
               if (items.isEmpty) {
                 return _EmptyStateCard(
-                  title: 'No owner transactions for this day.',
-                  subtitle: 'Record deposits and withdrawals here.',
+                  icon: Icons.inbox_outlined,
+                  title: 'No owner transactions for this day',
+                  subtitle:
+                      'Deposits and withdrawals you add appear here. They are also listed on Cash flow for this date.',
                 );
               }
 
@@ -392,6 +455,7 @@ class _TotalsCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -456,6 +520,7 @@ class _OwnerTxnTile extends StatelessWidget {
 
     return Card(
       elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -463,7 +528,18 @@ class _OwnerTxnTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: color.withValues(alpha: 0.15),
+                  child: Icon(
+                    isIn ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                    color: color,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     entry.category,
@@ -572,30 +648,43 @@ bool _isOwnerCategory(String category) {
 
 class _EmptyStateCard extends StatelessWidget {
   const _EmptyStateCard({
+    this.icon,
     required this.title,
     required this.subtitle,
   });
 
+  final IconData? icon;
   final String title;
   final String subtitle;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Card(
       elevation: 0,
-      color: theme.colorScheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: scheme.surfaceContainerHighest,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: theme.textTheme.titleMedium),
+            if (icon != null) ...[
+              Icon(icon, size: 44, color: scheme.outline),
+              const SizedBox(height: 16),
+            ],
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             Text(
               subtitle,
+              textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: scheme.onSurfaceVariant,
+                height: 1.35,
               ),
             ),
           ],
@@ -616,6 +705,7 @@ class _ErrorCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -641,6 +731,60 @@ class _ErrorCard extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showInvestmentsHelpDialog(BuildContext context) {
+  final theme = Theme.of(context);
+  final muted = theme.colorScheme.onSurfaceVariant;
+  final bodyStyle = theme.textTheme.bodyMedium?.copyWith(height: 1.45);
+
+  showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      return AlertDialog(
+        title: const Text('About owner transactions'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Use this screen when you move money between yourself and the shop’s cash drawer.',
+                style: bodyStyle,
+              ),
+              const SizedBox(height: 16),
+              Text('Owner deposit', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Text(
+                'You put cash (or equivalent) into the business. It is saved as a cash-in line on Cash flow for the date you pick.',
+                style: bodyStyle?.copyWith(color: muted),
+              ),
+              const SizedBox(height: 14),
+              Text('Owner withdrawal', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Text(
+                'You take cash out of the business. It is saved as a cash-out line on Cash flow.',
+                style: bodyStyle?.copyWith(color: muted),
+              ),
+              const SizedBox(height: 14),
+              Text('Why Cash flow?', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Text(
+                'Cash flow is the drawer ledger for each day. Owner lines stay there so you can reconcile expected cash with what you actually counted.',
+                style: bodyStyle?.copyWith(color: muted),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 double? _parseMoney(String? raw) {

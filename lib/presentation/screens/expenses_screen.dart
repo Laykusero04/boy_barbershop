@@ -752,13 +752,6 @@ class _ExpenseTile extends StatelessWidget {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                if ((expense.referenceSaleId ?? '').trim().isNotEmpty)
-                  Text(
-                    'Sale: #${expense.referenceSaleId}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
               ],
             ),
             if ((expense.notes ?? '').trim().isNotEmpty) ...[

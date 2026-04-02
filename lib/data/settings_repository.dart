@@ -42,6 +42,19 @@ class SettingsRepository {
     });
   }
 
+  Future<double> fetchDouble(String key, {required double defaultValue}) async {
+    final cleanedKey = key.trim();
+    if (cleanedKey.isEmpty) return defaultValue;
+    try {
+      final doc = await FirestoreCollections.settings(_db).doc(cleanedKey).get();
+      final raw = doc.data()?['value'];
+      if (raw is num) return raw.toDouble();
+    } on Object {
+      // fall through
+    }
+    return defaultValue;
+  }
+
   Future<void> setDouble(String key, double value) async {
     final cleanedKey = key.trim();
     if (cleanedKey.isEmpty) {

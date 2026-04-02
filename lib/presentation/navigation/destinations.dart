@@ -154,7 +154,8 @@ final List<AppDestination> appDestinations = [
     title: 'Owner pay & insights',
     icon: Icons.account_balance_wallet_outlined,
     group: AppDestinationGroup.insights,
-    builder: (context, user, _) => OwnerPayScreen(user: user),
+    builder: (context, user, goToDestination) =>
+        OwnerPayScreen(user: user, onNavigateToDestination: goToDestination),
   ),
   AppDestination(
     id: 'activity_by_hour',

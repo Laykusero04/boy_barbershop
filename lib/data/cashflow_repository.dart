@@ -47,6 +47,40 @@ class CashflowRepository {
     });
   }
 
+  /// Paginates cashflow entries from [minOccurredDay] (yyyy-mm-dd) onward and sums
+  /// amounts for **Owner deposit** cash-in lines (matches Investments screen category).
+  Future<double> sumOwnerDepositsSinceDay(
+    String minOccurredDay, {
+    int pageSize = 400,
+  }) async {
+    final minDay = minOccurredDay.trim();
+    if (!isValidYyyyMmDd(minDay)) return 0;
+    final safePage = pageSize <= 0 ? 400 : pageSize;
+    var total = 0.0;
+    Query<Map<String, dynamic>> q = FirestoreCollections.cashflowEntries(_db)
+        .where('occurred_day', isGreaterThanOrEqualTo: minDay)
+        .orderBy('occurred_day')
+        .limit(safePage);
+
+    while (true) {
+      final snap = await q.get();
+      for (final doc in snap.docs) {
+        final e = CashflowEntry.fromDoc(doc);
+        if (e.type != CashflowType.cashIn) continue;
+        if (e.category.trim().toLowerCase() != 'owner deposit') continue;
+        total += e.amount;
+      }
+      if (snap.docs.length < safePage) break;
+      final last = snap.docs.last;
+      q = FirestoreCollections.cashflowEntries(_db)
+          .where('occurred_day', isGreaterThanOrEqualTo: minDay)
+          .orderBy('occurred_day')
+          .startAfterDocument(last)
+          .limit(safePage);
+    }
+    return total;
+  }
+
   Future<List<CashflowEntry>> fetchEntriesForDays(
     List<String> occurredDays, {
     int chunkSize = 10,
