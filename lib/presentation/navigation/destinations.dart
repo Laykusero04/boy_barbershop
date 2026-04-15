@@ -12,6 +12,7 @@ import 'package:boy_barbershop/data/payment_methods_repository.dart';
 import 'package:boy_barbershop/data/promos_repository.dart';
 import 'package:boy_barbershop/data/services_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
+import 'package:boy_barbershop/models/user_role.dart';
 import 'package:boy_barbershop/presentation/screens/dashboard_screen.dart';
 import 'package:boy_barbershop/presentation/screens/add_sale_screen.dart';
 import 'package:boy_barbershop/presentation/screens/activity_by_hour_screen.dart';
@@ -29,8 +30,12 @@ import 'package:boy_barbershop/presentation/screens/reports_screen.dart';
 import 'package:boy_barbershop/presentation/screens/sales_intelligence_screen.dart';
 import 'package:boy_barbershop/presentation/screens/services_screen.dart';
 import 'package:boy_barbershop/presentation/screens/settings_screen.dart';
+import 'package:boy_barbershop/presentation/admin/users_management_screen.dart';
+import 'package:boy_barbershop/presentation/admin/audit_log_screen.dart';
+import 'package:boy_barbershop/presentation/admin/sale_disputes_screen.dart';
+import 'package:boy_barbershop/utils/role_guard.dart';
 
-enum AppDestinationGroup { operations, money, insights, stock, account }
+enum AppDestinationGroup { operations, money, insights, stock, account, admin }
 
 typedef DestinationBuilder = Widget Function(
   BuildContext context,
@@ -196,7 +201,36 @@ final List<AppDestination> appDestinations = [
     group: AppDestinationGroup.account,
     builder: (context, user, _) => const SettingsScreen(),
   ),
+
+  // ── Admin-only ─────────────────────────────────────────────────────
+  AppDestination(
+    id: 'users_management',
+    title: 'Manage users',
+    icon: Icons.supervised_user_circle_outlined,
+    group: AppDestinationGroup.admin,
+    builder: (context, user, _) => UsersManagementScreen(user: user),
+  ),
+  AppDestination(
+    id: 'sale_disputes',
+    title: 'Sale disputes',
+    icon: Icons.report_outlined,
+    group: AppDestinationGroup.admin,
+    builder: (context, user, _) => SaleDisputesScreen(user: user),
+  ),
+  AppDestination(
+    id: 'audit_log',
+    title: 'Audit log',
+    icon: Icons.history_outlined,
+    group: AppDestinationGroup.admin,
+    builder: (context, user, _) => AuditLogScreen(user: user),
+  ),
 ];
+
+/// Returns the full destination list filtered for [role].
+List<AppDestination> destinationsForRole(UserRole role) {
+  final allowed = RoleGuard.allowedDestinations(role);
+  return appDestinations.where((d) => allowed.contains(d.id)).toList();
+}
 
 AppDestination destinationById(String id) {
   return appDestinations.firstWhere((d) => d.id == id);

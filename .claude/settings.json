@@ -6,7 +6,13 @@
       "Bash(echo \"Removed $d\")",
       "Bash(echo \"Not empty or not found: $d\")",
       "Bash(done)",
-      "Bash(flutter analyze:*)"
+      "Bash(flutter analyze:*)",
+      "Bash(flutter build:*)",
+      "Bash(flutter pub:*)",
+      "Bash(dart run:*)"
+    ],
+    "additionalDirectories": [
+      "C:\\seve\\flutter\\boy_barbershop\\lib\\presentation"
     ]
   }
 }

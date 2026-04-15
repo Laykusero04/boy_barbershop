@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/data/admin_repository.dart';
 import 'package:boy_barbershop/data/barbers_repository.dart';
 import 'package:boy_barbershop/data/catalog_repository.dart';
 import 'package:boy_barbershop/data/expenses_repository.dart';
@@ -9,6 +10,7 @@ import 'package:boy_barbershop/data/sales_repository.dart';
 import 'package:boy_barbershop/data/settings_repository.dart';
 import 'package:boy_barbershop/models/barber.dart';
 import 'package:boy_barbershop/models/app_user.dart';
+import 'package:boy_barbershop/models/user_role.dart';
 import 'package:boy_barbershop/models/expense.dart';
 import 'package:boy_barbershop/models/inventory_item.dart';
 import 'package:boy_barbershop/models/payment_method_item.dart';
@@ -151,6 +153,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final inventoryRepo = context.read<InventoryRepository>();
     final settingsRepo = context.read<SettingsRepository>();
     final catalogRepo = context.read<CatalogRepository>();
+    final adminRepo = context.read<AdminRepository>();
 
     return SafeArea(
       child: ListView(
@@ -159,14 +162,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _DashboardHeader(day: day),
           const SizedBox(height: 12),
 
-          StreamBuilder<List<Barber>>(
-            stream: barbersRepo.watchAllBarbers(),
-            builder: (context, barbersSnap) {
-              if (barbersSnap.hasError) {
-                return _ErrorCard(title: 'Could not load barbers', error: barbersSnap.error);
-              }
-              final barbers = barbersSnap.data ?? const <Barber>[];
-              final barberById = mapBarbersById(barbers);
+          StreamBuilder<List<AppUser>>(
+            stream: adminRepo.watchAllUsers(),
+            builder: (context, usersSnap) {
+              final users = usersSnap.data ?? const <AppUser>[];
+              final userById = {for (final u in users) u.uid: u};
+
+              return StreamBuilder<List<Barber>>(
+                stream: barbersRepo.watchAllBarbers(),
+                builder: (context, barbersSnap) {
+                  if (barbersSnap.hasError) {
+                    return _ErrorCard(title: 'Could not load barbers', error: barbersSnap.error);
+                  }
+                  final barbers = barbersSnap.data ?? const <Barber>[];
+                  final barberById = mapBarbersById(barbers);
 
               return StreamBuilder<List<Sale>>(
                 stream: salesRepo.watchSalesForDay(day, limit: 200),
@@ -233,9 +242,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ),
                                   const SizedBox(height: _kSectionGap),
                                   _TodaySalesCard(
+                                    user: widget.user,
                                     sales: sales,
                                     barberById: barberById,
+                                    userById: userById,
                                     paymentMethods: catalogRepo.watchActivePaymentMethods(),
+                                    barbersStream: barbersRepo.watchAllBarbers(),
                                     onEditSaved: () {},
                                     onDeleteSaved: () {},
                                     salesRepo: salesRepo,
@@ -259,6 +271,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   );
                 },
               );
+            },
+          );
             },
           ),
         ],
@@ -522,17 +536,23 @@ class _TodayCard extends StatelessWidget {
 
 class _TodaySalesCard extends StatefulWidget {
   const _TodaySalesCard({
+    required this.user,
     required this.sales,
     required this.barberById,
+    required this.userById,
     required this.paymentMethods,
+    required this.barbersStream,
     required this.salesRepo,
     required this.onEditSaved,
     required this.onDeleteSaved,
   });
 
+  final AppUser user;
   final List<Sale> sales;
   final Map<String, Barber> barberById;
+  final Map<String, AppUser> userById;
   final Stream<List<PaymentMethodItem>> paymentMethods;
+  final Stream<List<Barber>> barbersStream;
   final SalesRepository salesRepo;
   final VoidCallback onEditSaved;
   final VoidCallback onDeleteSaved;
@@ -571,7 +591,11 @@ class _TodaySalesCardState extends State<_TodaySalesCard> {
   Future<void> _showEdit(BuildContext context, Sale sale) async {
     final result = await showDialog<_EditSaleResult>(
       context: context,
-      builder: (context) => _EditSaleDialog(sale: sale, paymentMethods: widget.paymentMethods),
+      builder: (context) => _EditSaleDialog(
+        sale: sale,
+        paymentMethods: widget.paymentMethods,
+        barbers: widget.barbersStream,
+      ),
     );
     if (!context.mounted || result == null) return;
     try {
@@ -580,6 +604,7 @@ class _TodaySalesCardState extends State<_TodaySalesCard> {
         price: result.price,
         paymentMethodName: result.paymentMethodName,
         notes: result.notes,
+        barberId: result.barberId,
       );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Changes saved.')));
@@ -641,6 +666,10 @@ class _TodaySalesCardState extends State<_TodaySalesCard> {
                       sale: visible[i],
                       barberName: widget.barberById[visible[i].barberId]?.name ?? 'Unknown',
                       barber: widget.barberById[visible[i].barberId],
+                      isAdmin: widget.user.role == UserRole.admin,
+                      cashierName: visible[i].createdByUid != null
+                          ? widget.userById[visible[i].createdByUid]?.displayName
+                          : null,
                       onEdit: () => _showEdit(context, visible[i]),
                       onDelete: () => _confirmDelete(context, visible[i]),
                     ),
@@ -669,6 +698,8 @@ class _SaleRow extends StatelessWidget {
     required this.sale,
     required this.barberName,
     required this.barber,
+    required this.isAdmin,
+    this.cashierName,
     required this.onEdit,
     required this.onDelete,
   });
@@ -676,6 +707,8 @@ class _SaleRow extends StatelessWidget {
   final Sale sale;
   final String barberName;
   final Barber? barber;
+  final bool isAdmin;
+  final String? cashierName;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -710,6 +743,16 @@ class _SaleRow extends StatelessWidget {
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+                if (isAdmin && cashierName != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Recorded by: $cashierName',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
                 if (notes.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(
@@ -736,15 +779,18 @@ class _SaleRow extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 icon: Icon(Icons.more_vert_rounded, size: 20, color: theme.colorScheme.onSurfaceVariant),
                 onSelected: (value) {
-                  if (value == 'edit') {
-                    onEdit();
-                  } else if (value == 'delete') {
-                    onDelete();
+                  switch (value) {
+                    case 'edit':
+                      onEdit();
+                    case 'delete':
+                      onDelete();
                   }
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  if (isAdmin) ...[
+                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
                 ],
               ),
             ],
@@ -760,21 +806,25 @@ class _EditSaleResult {
     required this.price,
     required this.paymentMethodName,
     required this.notes,
+    this.barberId,
   });
 
   final double price;
   final String? paymentMethodName;
   final String? notes;
+  final String? barberId;
 }
 
 class _EditSaleDialog extends StatefulWidget {
   const _EditSaleDialog({
     required this.sale,
     required this.paymentMethods,
+    required this.barbers,
   });
 
   final Sale sale;
   final Stream<List<PaymentMethodItem>> paymentMethods;
+  final Stream<List<Barber>> barbers;
 
   @override
   State<_EditSaleDialog> createState() => _EditSaleDialogState();
@@ -785,6 +835,7 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
   late final TextEditingController _priceController;
   late final TextEditingController _notesController;
   String? _paymentMethodName;
+  String? _barberId;
 
   @override
   void initState() {
@@ -792,6 +843,7 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
     _priceController = TextEditingController(text: formatMoney(widget.sale.price));
     _notesController = TextEditingController(text: widget.sale.notes ?? '');
     _paymentMethodName = widget.sale.paymentMethod;
+    _barberId = widget.sale.barberId;
   }
 
   @override
@@ -813,6 +865,32 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Barber dropdown
+                StreamBuilder<List<Barber>>(
+                  stream: widget.barbers,
+                  builder: (context, snap) {
+                    final items = snap.data ?? const <Barber>[];
+                    final hasMatch = items.any((b) => b.id == _barberId);
+                    return DropdownButtonFormField<String>(
+                      key: ValueKey('editBarber:$_barberId:${items.length}'),
+                      initialValue: hasMatch ? _barberId : null,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Barber'),
+                      items: items
+                          .map(
+                            (b) => DropdownMenuItem<String>(
+                              value: b.id,
+                              child: Text(b.name, overflow: TextOverflow.ellipsis),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _barberId = v),
+                      validator: (v) =>
+                          (v == null || v.isEmpty) ? 'Select a barber' : null,
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
                 TextFormField(
                   controller: _priceController,
                   keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: true),
@@ -835,6 +913,7 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
                     return DropdownButtonFormField<String>(
                       key: ValueKey('editPm:$selected:${items.length}'),
                       initialValue: selected,
+                      isExpanded: true,
                       decoration: const InputDecoration(labelText: 'Payment method (optional)'),
                       items: [
                         const DropdownMenuItem<String>(value: null, child: Text('—')),
@@ -876,6 +955,7 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
         price: price,
         paymentMethodName: _paymentMethodName,
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+        barberId: _barberId,
       ),
     );
   }

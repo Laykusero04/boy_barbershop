@@ -10,6 +10,7 @@ class SaleCreate {
     required this.promoId,
     required this.originalPrice,
     required this.discountAmount,
+    this.ownerCoversDiscount = false,
   });
 
   final String barberId;
@@ -23,5 +24,6 @@ class SaleCreate {
   final String? promoId;
   final double? originalPrice;
   final double? discountAmount;
+  final bool ownerCoversDiscount;
 }
 

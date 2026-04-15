@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/data/admin_repository.dart';
 import 'package:boy_barbershop/data/catalog_repository.dart';
+import 'package:boy_barbershop/data/disputes_repository.dart';
 import 'package:boy_barbershop/data/promos_repository.dart';
 import 'package:boy_barbershop/data/sales_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
@@ -11,6 +13,7 @@ import 'package:boy_barbershop/models/promo.dart';
 import 'package:boy_barbershop/models/sale.dart';
 import 'package:boy_barbershop/models/sale_create.dart';
 import 'package:boy_barbershop/models/service_item.dart';
+import 'package:boy_barbershop/models/user_role.dart';
 
 /// Opens the same add-sale form as [AddSaleScreen]’s first tab, in a dialog.
 Future<void> showAddSaleDialog(BuildContext context, {required AppUser user}) {
@@ -73,6 +76,7 @@ class _AddSaleFormState extends State<AddSaleForm> {
   String? _selectedPromoId;
   double? _promoOriginalPrice;
   double? _promoDiscountAmount;
+  bool _ownerCoversDiscount = false;
 
   bool _isSaving = false;
 
@@ -116,6 +120,7 @@ class _AddSaleFormState extends State<AddSaleForm> {
           promoId: _selectedPromoId,
           originalPrice: _promoOriginalPrice,
           discountAmount: _promoDiscountAmount,
+          ownerCoversDiscount: _ownerCoversDiscount,
         ),
       );
 
@@ -132,6 +137,7 @@ class _AddSaleFormState extends State<AddSaleForm> {
           _selectedPromoId = null;
           _promoOriginalPrice = null;
           _promoDiscountAmount = null;
+          _ownerCoversDiscount = false;
           _priceController.clear();
           _notesController.clear();
         });
@@ -200,6 +206,7 @@ class _AddSaleFormState extends State<AddSaleForm> {
                   _selectedPromoId = null;
                   _promoOriginalPrice = null;
                   _promoDiscountAmount = null;
+                  _ownerCoversDiscount = false;
                 });
                 return;
               }
@@ -235,12 +242,23 @@ class _AddSaleFormState extends State<AddSaleForm> {
                       _selectedPromoId = null;
                       _promoOriginalPrice = null;
                       _promoDiscountAmount = null;
+                      _ownerCoversDiscount = false;
                       if (restore != null) {
                         _priceController.text = _formatMoney(restore);
                       }
                     });
                   },
           ),
+          if (_selectedPromoId != null) ...[
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Owner covers barber share'),
+              subtitle: const Text('Barber gets paid based on original price'),
+              value: _ownerCoversDiscount,
+              onChanged: (v) => setState(() => _ownerCoversDiscount = v),
+            ),
+          ],
           const SizedBox(height: 12),
           _PaymentMethodField(
             stream: _catalogRepo.watchActivePaymentMethods(),
@@ -358,6 +376,7 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
                       ],
                     ),
                     _SalesForDateTab(
+                      user: widget.user,
                       initialSaleDay: _salesDay,
                       initialRows: _salesRows,
                       onSaleDayChanged: (v) => setState(() => _salesDay = v),
@@ -380,12 +399,14 @@ class _AddSaleScreenState extends State<AddSaleScreen> {
 
 class _SalesForDateTab extends StatefulWidget {
   const _SalesForDateTab({
+    required this.user,
     required this.initialSaleDay,
     required this.initialRows,
     required this.onSaleDayChanged,
     required this.onRowsChanged,
   });
 
+  final AppUser user;
   final String initialSaleDay;
   final int initialRows;
   final ValueChanged<String> onSaleDayChanged;
@@ -398,6 +419,7 @@ class _SalesForDateTab extends StatefulWidget {
 class _SalesForDateTabState extends State<_SalesForDateTab> {
   late final CatalogRepository _catalogRepo;
   late final SalesRepository _salesRepo;
+  late final AdminRepository _adminRepo;
   bool _depsInitialized = false;
 
   late String _day;
@@ -421,6 +443,7 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
       _depsInitialized = true;
       _catalogRepo = context.read<CatalogRepository>();
       _salesRepo = context.read<SalesRepository>();
+      _adminRepo = context.read<AdminRepository>();
     }
   }
 
@@ -490,17 +513,23 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
           ),
         ),
         const SizedBox(height: 12),
-        StreamBuilder<List<Barber>>(
-          stream: _catalogRepo.watchActiveBarbers(),
-          builder: (context, barbersSnap) {
-            if (barbersSnap.hasError) {
-              return _ErrorCard(
-                title: 'Could not load barbers',
-                error: barbersSnap.error,
-              );
-            }
-            final barbers = barbersSnap.data ?? const <Barber>[];
-            final barberById = {for (final b in barbers) b.id: b};
+        StreamBuilder<List<AppUser>>(
+          stream: _adminRepo.watchAllUsers(),
+          builder: (context, usersSnap) {
+            final users = usersSnap.data ?? const <AppUser>[];
+            final userById = {for (final u in users) u.uid: u};
+
+            return StreamBuilder<List<Barber>>(
+              stream: _catalogRepo.watchActiveBarbers(),
+              builder: (context, barbersSnap) {
+                if (barbersSnap.hasError) {
+                  return _ErrorCard(
+                    title: 'Could not load barbers',
+                    error: barbersSnap.error,
+                  );
+                }
+                final barbers = barbersSnap.data ?? const <Barber>[];
+                final barberById = {for (final b in barbers) b.id: b};
 
             return StreamBuilder<List<ServiceItem>>(
               stream: _catalogRepo.watchActiveServices(),
@@ -538,6 +567,7 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
                       );
                     }
 
+                    final isAdmin = widget.user.role == UserRole.admin;
                     return Column(
                       children: [
                         for (final sale in sales) ...[
@@ -547,8 +577,16 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
                             barber: barberById[sale.barberId],
                             serviceName:
                                 serviceById[sale.serviceId]?.name ?? 'Unknown',
-                            onEdit: () => _showEditSaleDialog(context, sale),
-                            onDelete: () => _confirmDelete(context, sale),
+                            isAdmin: isAdmin,
+                            cashierName: sale.createdByUid != null
+                                ? userById[sale.createdByUid]?.displayName
+                                : null,
+                            onEdit: isAdmin
+                                ? () => _showEditSaleDialog(context, sale)
+                                : () => _showRequestEditDialog(context, sale),
+                            onDelete: isAdmin
+                                ? () => _confirmDelete(context, sale)
+                                : () => _showRequestDeleteDialog(context, sale),
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -558,6 +596,8 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
                 );
               },
             );
+          },
+        );
           },
         ),
       ],
@@ -598,6 +638,63 @@ class _SalesForDateTabState extends State<_SalesForDateTab> {
     }
   }
 
+  // ── Cashier: Request Edit ──────────────────────────────────────────
+  Future<void> _showRequestEditDialog(BuildContext context, Sale sale) async {
+    final paymentMethodsStream = _catalogRepo.watchActivePaymentMethods();
+    final result = await showDialog<_EditSaleResult>(
+      context: context,
+      builder: (context) => _EditSaleDialog(
+        sale: sale,
+        paymentMethods: paymentMethodsStream,
+        submitLabel: 'Request',
+      ),
+    );
+    if (!context.mounted || result == null) return;
+
+    try {
+      final changes = <String, dynamic>{
+        'price': result.price,
+      };
+      if (result.paymentMethodName != null) {
+        changes['payment_method'] = result.paymentMethodName;
+      }
+      if (result.notes != null && result.notes!.isNotEmpty) {
+        changes['notes'] = result.notes;
+      }
+
+      await context.read<DisputesRepository>().requestEdit(
+            saleId: sale.id,
+            saleDay: sale.saleDay,
+            reportedByUid: widget.user.uid,
+            reportedByName: widget.user.displayName,
+            reason: 'Edit request',
+            proposedChanges: changes,
+          );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Edit request sent to admin.')),
+      );
+    } on Object {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not send request. Try again.')),
+      );
+    }
+  }
+
+  // ── Cashier: Request Delete ─────────────────────────────────────────
+  void _showRequestDeleteDialog(BuildContext context, Sale sale) {
+    showDialog(
+      context: context,
+      builder: (_) => _RequestDeleteDialog(
+        sale: sale,
+        user: widget.user,
+        disputesRepo: context.read<DisputesRepository>(),
+      ),
+    );
+  }
+
+  // ── Admin: Direct Edit ──────────────────────────────────────────────
   Future<void> _showEditSaleDialog(BuildContext context, Sale sale) async {
     final paymentMethodsStream = _catalogRepo.watchActivePaymentMethods();
     final result = await showDialog<_EditSaleResult>(
@@ -1119,6 +1216,8 @@ class _SaleTile extends StatelessWidget {
     required this.barberName,
     required this.barber,
     required this.serviceName,
+    required this.isAdmin,
+    this.cashierName,
     required this.onEdit,
     required this.onDelete,
   });
@@ -1127,6 +1226,8 @@ class _SaleTile extends StatelessWidget {
   final String barberName;
   final Barber? barber;
   final String serviceName;
+  final bool isAdmin;
+  final String? cashierName;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -1188,6 +1289,14 @@ class _SaleTile extends StatelessWidget {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                if (isAdmin && cashierName != null)
+                  Text(
+                    'Recorded by: $cashierName',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
               ],
             ),
             if ((sale.notes ?? '').trim().isNotEmpty) ...[
@@ -1207,12 +1316,12 @@ class _SaleTile extends StatelessWidget {
                 FilledButton.tonalIcon(
                   onPressed: onEdit,
                   icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Edit'),
+                  label: Text(isAdmin ? 'Edit' : 'Request Edit'),
                 ),
                 FilledButton.tonalIcon(
                   onPressed: onDelete,
                   icon: const Icon(Icons.delete_outline_rounded),
-                  label: const Text('Delete'),
+                  label: Text(isAdmin ? 'Delete' : 'Request Delete'),
                 ),
               ],
             ),
@@ -1239,10 +1348,12 @@ class _EditSaleDialog extends StatefulWidget {
   const _EditSaleDialog({
     required this.sale,
     required this.paymentMethods,
+    this.submitLabel = 'Save',
   });
 
   final Sale sale;
   final Stream<List<PaymentMethodItem>> paymentMethods;
+  final String submitLabel;
 
   @override
   State<_EditSaleDialog> createState() => _EditSaleDialogState();
@@ -1345,7 +1456,7 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
         ),
         FilledButton(
           onPressed: _submit,
-          child: const Text('Save'),
+          child: Text(widget.submitLabel),
         ),
       ],
     );
@@ -1362,6 +1473,155 @@ class _EditSaleDialogState extends State<_EditSaleDialog> {
         paymentMethodName: _paymentMethodName,
         notes: _notesController.text,
       ),
+    );
+  }
+}
+
+class _RequestDeleteDialog extends StatefulWidget {
+  const _RequestDeleteDialog({
+    required this.sale,
+    required this.user,
+    required this.disputesRepo,
+  });
+
+  final Sale sale;
+  final AppUser user;
+  final DisputesRepository disputesRepo;
+
+  @override
+  State<_RequestDeleteDialog> createState() => _RequestDeleteDialogState();
+}
+
+class _RequestDeleteDialogState extends State<_RequestDeleteDialog> {
+  static const _templates = [
+    'Duplicate entry',
+    'Wrong barber selected',
+    'Wrong service selected',
+    'Sale was cancelled',
+    'Customer did not pay',
+    'Test entry',
+  ];
+
+  final _detailsCtrl = TextEditingController();
+  String? _selectedTemplate;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _detailsCtrl.dispose();
+    super.dispose();
+  }
+
+  String get _finalReason {
+    final parts = <String>[];
+    if (_selectedTemplate != null) parts.add(_selectedTemplate!);
+    final extra = _detailsCtrl.text.trim();
+    if (extra.isNotEmpty) parts.add(extra);
+    return parts.join(' — ');
+  }
+
+  Future<void> _submit() async {
+    if (_selectedTemplate == null && _detailsCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Select a reason or add details.');
+      return;
+    }
+    setState(() { _busy = true; _error = null; });
+
+    try {
+      await widget.disputesRepo.requestDelete(
+        saleId: widget.sale.id,
+        saleDay: widget.sale.saleDay,
+        reportedByUid: widget.user.uid,
+        reportedByName: widget.user.displayName,
+        reason: _finalReason,
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Delete request sent to admin.')),
+        );
+      }
+    } on Object {
+      setState(() => _error = 'Could not send request. Try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return AlertDialog(
+      title: const Text('Request to delete'),
+      content: SizedBox(
+        width: 340,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Sale: ₱${_formatMoney(widget.sale.price)} on ${widget.sale.saleDay}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (_error != null) ...[
+                Text(_error!, style: TextStyle(color: scheme.error)),
+                const SizedBox(height: 8),
+              ],
+              Text('Why should this be deleted?', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _templates.map((t) {
+                  final selected = _selectedTemplate == t;
+                  return ChoiceChip(
+                    label: Text(t),
+                    selected: selected,
+                    onSelected: (val) {
+                      setState(() {
+                        _selectedTemplate = val ? t : null;
+                        _error = null;
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _detailsCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Additional details (optional)',
+                  hintText: 'Add more info if needed...',
+                ),
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          child: _busy
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Request'),
+        ),
+      ],
     );
   }
 }
@@ -1686,6 +1946,7 @@ class _PromoField extends StatelessWidget {
               child: DropdownButtonFormField<String>(
                 key: ValueKey('promo:${selected?.id}:${items.length}'),
                 initialValue: selected?.id,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Promo (optional)'),
                 items: [
                   const DropdownMenuItem<String>(
@@ -1695,7 +1956,11 @@ class _PromoField extends StatelessWidget {
                   ...items.map(
                     (p) => DropdownMenuItem<String>(
                       value: p.id,
-                      child: Text('${p.name}  •  ${_promoLabel(p)}'),
+                      child: Text(
+                        '${p.name}  •  ${_promoLabel(p)}',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ),
                   ),
                 ],

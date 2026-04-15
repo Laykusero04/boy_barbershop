@@ -39,5 +39,20 @@ abstract final class FirestoreCollections {
     FirebaseFirestore db,
   ) =>
       db.collection('settings');
+
+  static CollectionReference<Map<String, dynamic>> users(
+    FirebaseFirestore db,
+  ) =>
+      db.collection('users');
+
+  static CollectionReference<Map<String, dynamic>> auditLogs(
+    FirebaseFirestore db,
+  ) =>
+      db.collection('audit_logs');
+
+  static CollectionReference<Map<String, dynamic>> saleDisputes(
+    FirebaseFirestore db,
+  ) =>
+      db.collection('sale_disputes');
 }
 

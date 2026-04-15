@@ -14,6 +14,8 @@ class Sale extends Equatable {
     required this.promoId,
     required this.originalPrice,
     required this.discountAmount,
+    required this.ownerCoversDiscount,
+    this.createdByUid,
   });
 
   final String id;
@@ -28,6 +30,8 @@ class Sale extends Equatable {
   final String? promoId;
   final double? originalPrice;
   final double? discountAmount;
+  final bool ownerCoversDiscount;
+  final String? createdByUid;
 
   static Sale fromDoc(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -45,6 +49,8 @@ class Sale extends Equatable {
       promoId: (data['promo_id'] as String?)?.trim(),
       originalPrice: (data['original_price'] as num?)?.toDouble(),
       discountAmount: (data['discount_amount'] as num?)?.toDouble(),
+      ownerCoversDiscount: (data['owner_covers_discount'] as bool?) ?? false,
+      createdByUid: (data['created_by_uid'] as String?)?.trim(),
     );
   }
 
@@ -61,6 +67,8 @@ class Sale extends Equatable {
         promoId,
         originalPrice,
         discountAmount,
+        ownerCoversDiscount,
+        createdByUid,
       ];
 }
 

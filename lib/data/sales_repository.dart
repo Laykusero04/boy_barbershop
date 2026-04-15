@@ -277,6 +277,7 @@ class SalesRepository {
         if (input.discountAmount != null) {
           data['discount_amount'] = input.discountAmount;
         }
+        data['owner_covers_discount'] = input.ownerCoversDiscount;
       }
 
       final docRef = await FirestoreCollections.sales(_db).add(data);
@@ -321,6 +322,7 @@ class SalesRepository {
     required double price,
     required String? paymentMethodName,
     required String? notes,
+    String? barberId,
   }) async {
     final cleanedId = saleId.trim();
     if (cleanedId.isEmpty) throw SaleCreateException('Invalid sale.');
@@ -332,13 +334,18 @@ class SalesRepository {
         (paymentMethodName ?? '').trim().isEmpty ? null : paymentMethodName!.trim();
     final cleanedNotes = (notes ?? '').trim().isEmpty ? null : notes!.trim();
 
+    final updates = <String, Object?>{
+      'price': price,
+      'payment_method': cleanedPayment,
+      'notes': cleanedNotes,
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+    if (barberId != null && barberId.trim().isNotEmpty) {
+      updates['barber_id'] = barberId.trim();
+    }
+
     try {
-      await FirestoreCollections.sales(_db).doc(cleanedId).update({
-        'price': price,
-        'payment_method': cleanedPayment,
-        'notes': cleanedNotes,
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+      await FirestoreCollections.sales(_db).doc(cleanedId).update(updates);
     } on FirebaseException catch (e) {
       throw SaleCreateException(_firestoreErrorMessage(e));
     } on Object {

@@ -10,6 +10,7 @@ class AppBloc extends Bloc<AppEvent, AppState> {
     on<AppStarted>(_onStarted);
     on<AppLoginRequested>(_onLoginRequested);
     on<AppLogoutRequested>(_onLogoutRequested);
+    on<AppProfileRefreshRequested>(_onProfileRefresh);
   }
 
   Future<void> _onStarted(AppStarted event, Emitter<AppState> emit) async {
@@ -83,6 +84,27 @@ class AppBloc extends Bloc<AppEvent, AppState> {
           loginError: 'Could not load your profile. Try again.',
         ),
       );
+    }
+  }
+
+  Future<void> _onProfileRefresh(
+    AppProfileRefreshRequested event,
+    Emitter<AppState> emit,
+  ) async {
+    final current = FirebaseAuth.instance.currentUser;
+    if (current == null) {
+      emit(const AppUnauthenticated());
+      return;
+    }
+    try {
+      final profile = await fetchUserProfile(current.uid);
+      if (profile == null) {
+        emit(const AppUnauthenticated(loginError: 'Profile not found.'));
+        return;
+      }
+      emit(AppAuthenticated(user: profile));
+    } on UserProfileLoadException catch (e) {
+      emit(AppUnauthenticated(loginError: e.message));
     }
   }
 

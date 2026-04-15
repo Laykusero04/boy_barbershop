@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/bloc/app/app_bloc.dart';
 import 'package:boy_barbershop/bloc/app/app_event.dart';
+import 'package:boy_barbershop/data/disputes_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
+import 'package:boy_barbershop/models/user_role.dart';
 import 'package:boy_barbershop/presentation/navigation/destinations.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -20,8 +22,9 @@ class AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final filtered = destinationsForRole(user.role);
     final groups = <AppDestinationGroup, List<AppDestination>>{};
-    for (final d in appDestinations) {
+    for (final d in filtered) {
       (groups[d.group] ??= []).add(d);
     }
 
@@ -58,6 +61,11 @@ class AppDrawer extends StatelessWidget {
                     context: context,
                     title: 'ACCOUNT',
                     destinations: groups[AppDestinationGroup.account] ?? const [],
+                  ),
+                  ..._buildGroup(
+                    context: context,
+                    title: 'ADMIN',
+                    destinations: groups[AppDestinationGroup.admin] ?? const [],
                   ),
                 ],
               ),
@@ -100,6 +108,9 @@ class AppDrawer extends StatelessWidget {
       ),
       ...destinations.map((d) {
         final selected = d.id == selectedId;
+        final needsBadge =
+            d.id == 'sale_disputes' && user.role == UserRole.admin;
+
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           child: ListTile(
@@ -109,6 +120,11 @@ class AppDrawer extends StatelessWidget {
             ),
             leading: Icon(d.icon),
             title: Text(d.title),
+            trailing: needsBadge
+                ? _PendingDisputeBadge(
+                    repo: context.read<DisputesRepository>(),
+                  )
+                : null,
             onTap: () {
               Navigator.of(context).pop();
               onSelect(d.id);
@@ -117,6 +133,37 @@ class AppDrawer extends StatelessWidget {
         );
       }),
     ];
+  }
+}
+
+class _PendingDisputeBadge extends StatelessWidget {
+  const _PendingDisputeBadge({required this.repo});
+
+  final DisputesRepository repo;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: repo.watchPendingCount(),
+      builder: (context, snap) {
+        final count = snap.data ?? 0;
+        if (count == 0) return const SizedBox.shrink();
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.red,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        );
+      },
+    );
   }
 }
 

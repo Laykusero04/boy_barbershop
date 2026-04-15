@@ -14,10 +14,19 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  String _selectedId = appDestinations.first.id;
+  String _selectedId = 'dashboard';
 
   @override
   Widget build(BuildContext context) {
+    // Only show destinations the user's role is allowed to see.
+    final allowed = destinationsForRole(widget.user.role);
+    final allowedIds = allowed.map((d) => d.id).toSet();
+
+    // If current selection is no longer allowed, fall back to first allowed.
+    if (!allowedIds.contains(_selectedId)) {
+      _selectedId = allowed.first.id;
+    }
+
     final destination = destinationById(_selectedId);
     return Scaffold(
       appBar: AppBar(
@@ -31,7 +40,11 @@ class _AppShellState extends State<AppShell> {
       body: destination.builder(
         context,
         widget.user,
-        (id) => setState(() => _selectedId = id),
+        (id) {
+          if (allowedIds.contains(id)) {
+            setState(() => _selectedId = id);
+          }
+        },
       ),
     );
   }

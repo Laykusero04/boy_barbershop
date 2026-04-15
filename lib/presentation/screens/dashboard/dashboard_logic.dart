@@ -31,7 +31,8 @@ double computeBarberShareTotal({
         total += b.dailyRate;
       }
     } else {
-      total += s.price * (b.percentageShare / 100.0);
+      final base = s.ownerCoversDiscount ? (s.originalPrice ?? s.price) : s.price;
+      total += base * (b.percentageShare / 100.0);
     }
   }
   return total;
@@ -87,7 +88,8 @@ List<BarberEarningsRow> computeEarningsRows({
   for (final s in sales) {
     final id = s.barberId.trim();
     if (id.isEmpty) continue;
-    totals[id] = (totals[id] ?? 0) + s.price;
+    final earningsBase = s.ownerCoversDiscount ? (s.originalPrice ?? s.price) : s.price;
+    totals[id] = (totals[id] ?? 0) + earningsBase;
     counts[id] = (counts[id] ?? 0) + 1;
   }
 

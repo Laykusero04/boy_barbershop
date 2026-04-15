@@ -25,3 +25,8 @@ final class AppLoginRequested extends AppEvent {
 final class AppLogoutRequested extends AppEvent {
   const AppLogoutRequested();
 }
+
+/// Re-fetches the user profile (e.g. after email change).
+final class AppProfileRefreshRequested extends AppEvent {
+  const AppProfileRefreshRequested();
+}
