@@ -47,6 +47,29 @@ class CashflowRepository {
     });
   }
 
+  /// Streams all owner deposit / withdrawal entries, newest first.
+  Stream<List<CashflowEntry>> watchOwnerEntries({int limit = 500}) {
+    final safeLimit = limit <= 0 ? 500 : limit;
+    return FirestoreCollections.cashflowEntries(_db)
+        .where('category', whereIn: ['Owner deposit', 'Owner withdrawal'])
+        .orderBy('occurred_at', descending: true)
+        .limit(safeLimit)
+        .snapshots()
+        .map((snap) {
+      final list = snap.docs.map(CashflowEntry.fromDoc).toList(growable: false);
+      final sorted = [...list];
+      sorted.sort((a, b) {
+        final aDt = a.occurredAt;
+        final bDt = b.occurredAt;
+        if (aDt != null && bDt != null) return bDt.compareTo(aDt);
+        if (aDt != null) return -1;
+        if (bDt != null) return 1;
+        return b.id.compareTo(a.id);
+      });
+      return sorted;
+    });
+  }
+
   /// Paginates cashflow entries from [minOccurredDay] (yyyy-mm-dd) onward and sums
   /// amounts for **Owner deposit** cash-in lines (matches Investments screen category).
   Future<double> sumOwnerDepositsSinceDay(

@@ -24,7 +24,7 @@ class BarbersRepository {
           (snap) {
             final list = snap.docs
               .map((d) => Barber.fromFirestoreMap(d.id, d.data()))
-              .where((b) => b.name.isNotEmpty)
+              .where((b) => b.name.isNotEmpty && !b.removed)
               .toList(growable: false);
 
             list.sort((a, b) {
@@ -46,28 +46,16 @@ class BarbersRepository {
     if (cleanedName.isEmpty) {
       throw BarberWriteException('Name is required.');
     }
-    if (compensationType == BarberCompensationType.percentage) {
-      if (percentageShare.isNaN || percentageShare.isInfinite) {
-        throw BarberWriteException('Invalid percentage share.');
-      }
-      if (percentageShare < 0 || percentageShare > 100) {
-        throw BarberWriteException('Percentage share must be 0 to 100.');
-      }
-    } else {
-      if (dailyRate.isNaN || dailyRate.isInfinite || dailyRate < 0) {
-        throw BarberWriteException('Daily rate must be a valid non-negative amount.');
-      }
-    }
+    _validateCompensation(compensationType, percentageShare, dailyRate);
 
     try {
       await FirestoreCollections.barbers(_db).add({
         'name': cleanedName,
-        'compensation_type':
-            compensationType == BarberCompensationType.dailyRate ? 'daily' : 'percent',
-        'percentage_share': compensationType == BarberCompensationType.percentage
+        'compensation_type': _compensationTypeToString(compensationType),
+        'percentage_share': _shouldStorePercentage(compensationType)
             ? percentageShare
             : 0.0,
-        'daily_rate': compensationType == BarberCompensationType.dailyRate
+        'daily_rate': _shouldStoreDailyRate(compensationType)
             ? dailyRate
             : 0.0,
         'is_active': true,
@@ -95,28 +83,16 @@ class BarbersRepository {
     if (cleanedName.isEmpty) {
       throw BarberWriteException('Name is required.');
     }
-    if (compensationType == BarberCompensationType.percentage) {
-      if (percentageShare.isNaN || percentageShare.isInfinite) {
-        throw BarberWriteException('Invalid percentage share.');
-      }
-      if (percentageShare < 0 || percentageShare > 100) {
-        throw BarberWriteException('Percentage share must be 0 to 100.');
-      }
-    } else {
-      if (dailyRate.isNaN || dailyRate.isInfinite || dailyRate < 0) {
-        throw BarberWriteException('Daily rate must be a valid non-negative amount.');
-      }
-    }
+    _validateCompensation(compensationType, percentageShare, dailyRate);
 
     try {
       await FirestoreCollections.barbers(_db).doc(barberId).update({
         'name': cleanedName,
-        'compensation_type':
-            compensationType == BarberCompensationType.dailyRate ? 'daily' : 'percent',
-        'percentage_share': compensationType == BarberCompensationType.percentage
+        'compensation_type': _compensationTypeToString(compensationType),
+        'percentage_share': _shouldStorePercentage(compensationType)
             ? percentageShare
             : 0.0,
-        'daily_rate': compensationType == BarberCompensationType.dailyRate
+        'daily_rate': _shouldStoreDailyRate(compensationType)
             ? dailyRate
             : 0.0,
         'updated_at': FieldValue.serverTimestamp(),
@@ -143,7 +119,74 @@ class BarbersRepository {
       throw BarberWriteException('Could not deactivate barber. Please try again.');
     }
   }
+
+  Future<void> removeBarber({
+    required String barberId,
+    required String reason,
+  }) async {
+    if (barberId.trim().isEmpty) {
+      throw BarberWriteException('Invalid barber.');
+    }
+    if (reason.trim().isEmpty) {
+      throw BarberWriteException('Please select a reason for removal.');
+    }
+    try {
+      await FirestoreCollections.barbers(_db).doc(barberId).update({
+        'removed': true,
+        'removed_reason': reason.trim(),
+        'removed_at': FieldValue.serverTimestamp(),
+        'is_active': false,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    } on FirebaseException catch (e) {
+      throw BarberWriteException(_firestoreErrorMessage(e));
+    } on Object {
+      throw BarberWriteException('Could not remove barber. Please try again.');
+    }
+  }
 }
+
+void _validateCompensation(
+  BarberCompensationType type,
+  double percentageShare,
+  double dailyRate,
+) {
+  final needsPercent = type == BarberCompensationType.percentage ||
+      type == BarberCompensationType.guaranteedBase;
+  final needsDaily = type == BarberCompensationType.dailyRate ||
+      type == BarberCompensationType.guaranteedBase;
+
+  if (needsPercent) {
+    if (percentageShare.isNaN || percentageShare.isInfinite) {
+      throw BarberWriteException('Invalid percentage share.');
+    }
+    if (percentageShare < 0 || percentageShare > 100) {
+      throw BarberWriteException('Percentage share must be 0 to 100.');
+    }
+  }
+  if (needsDaily) {
+    if (dailyRate.isNaN || dailyRate.isInfinite || dailyRate < 0) {
+      throw BarberWriteException(
+          'Daily rate must be a valid non-negative amount.');
+    }
+  }
+}
+
+String _compensationTypeToString(BarberCompensationType type) {
+  return switch (type) {
+    BarberCompensationType.percentage => 'percent',
+    BarberCompensationType.dailyRate => 'daily',
+    BarberCompensationType.guaranteedBase => 'guaranteed_base',
+  };
+}
+
+bool _shouldStorePercentage(BarberCompensationType type) =>
+    type == BarberCompensationType.percentage ||
+    type == BarberCompensationType.guaranteedBase;
+
+bool _shouldStoreDailyRate(BarberCompensationType type) =>
+    type == BarberCompensationType.dailyRate ||
+    type == BarberCompensationType.guaranteedBase;
 
 String _firestoreErrorMessage(FirebaseException e) {
   switch (e.code) {

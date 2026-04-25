@@ -20,9 +20,15 @@ double computeBarberShareTotal({
 }) {
   var total = 0.0;
   final dailyBarberDays = <String>{};
+  // For guaranteedBase barbers, accumulate commission per barber per day
+  // then compare with daily rate.
+  final gbCommission = <String, double>{}; // key: barberId|day
+  final gbBarbers = <String, Barber>{};
+
   for (final s in sales) {
     final b = barberById[s.barberId];
     if (b == null) continue;
+
     if (b.compensationType == BarberCompensationType.dailyRate) {
       final day = s.saleDay.trim();
       if (day.isEmpty) continue;
@@ -30,11 +36,28 @@ double computeBarberShareTotal({
       if (dailyBarberDays.add(key)) {
         total += b.dailyRate;
       }
+    } else if (b.compensationType == BarberCompensationType.guaranteedBase) {
+      final day = s.saleDay.trim();
+      if (day.isEmpty) continue;
+      final base = s.ownerCoversDiscount ? (s.originalPrice ?? s.price) : s.price;
+      final key = '${s.barberId}|$day';
+      gbCommission[key] = (gbCommission[key] ?? 0) + base * (b.percentageShare / 100.0);
+      gbBarbers[s.barberId] = b;
     } else {
       final base = s.ownerCoversDiscount ? (s.originalPrice ?? s.price) : s.price;
       total += base * (b.percentageShare / 100.0);
     }
   }
+
+  // For guaranteedBase: pay whichever is higher per day — commission or daily rate.
+  for (final entry in gbCommission.entries) {
+    final barberId = entry.key.split('|').first;
+    final b = gbBarbers[barberId];
+    if (b == null) continue;
+    final commission = entry.value;
+    total += commission > b.dailyRate ? commission : b.dailyRate;
+  }
+
   return total;
 }
 
@@ -98,12 +121,27 @@ List<BarberEarningsRow> computeEarningsRows({
   for (final b in active) {
     final totalSales = totals[b.id] ?? 0.0;
     final barberSales = sales.where((s) => s.barberId == b.id).toList();
-    final earnings = b.compensationType == BarberCompensationType.dailyRate
-        ? (barberSales.isEmpty
-            ? 0.0
-            : b.dailyRate *
-                barberSales.map((s) => s.saleDay).where((d) => d.trim().isNotEmpty).toSet().length)
-        : totalSales * (b.percentageShare / 100.0);
+    final double earnings;
+    if (b.compensationType == BarberCompensationType.dailyRate) {
+      final days = barberSales.map((s) => s.saleDay).where((d) => d.trim().isNotEmpty).toSet();
+      earnings = barberSales.isEmpty ? 0.0 : b.dailyRate * days.length;
+    } else if (b.compensationType == BarberCompensationType.guaranteedBase) {
+      // Group sales by day, compute commission per day, take max(commission, dailyRate).
+      final dayTotals = <String, double>{};
+      for (final s in barberSales) {
+        final day = s.saleDay.trim();
+        if (day.isEmpty) continue;
+        final base = s.ownerCoversDiscount ? (s.originalPrice ?? s.price) : s.price;
+        dayTotals[day] = (dayTotals[day] ?? 0) + base * (b.percentageShare / 100.0);
+      }
+      var sum = 0.0;
+      for (final commission in dayTotals.values) {
+        sum += commission > b.dailyRate ? commission : b.dailyRate;
+      }
+      earnings = sum;
+    } else {
+      earnings = totalSales * (b.percentageShare / 100.0);
+    }
     rows.add(
       BarberEarningsRow(
         barber: b,

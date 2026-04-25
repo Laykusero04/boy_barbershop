@@ -48,6 +48,8 @@ class BarbersScreen extends StatelessWidget {
                               onEdit: () => _showEditDialog(context, b),
                               onDeactivate:
                                   b.isActive ? () => _confirmDeactivate(context, b) : null,
+                              onRemove:
+                                  !b.isActive ? () => _confirmRemove(context, b) : null,
                             ),
                             const SizedBox(height: 12),
                           ],
@@ -86,6 +88,12 @@ class BarbersScreen extends StatelessWidget {
               onPressed: () =>
                   Navigator.of(context).pop(BarberCompensationType.dailyRate),
               child: const Text('Daily rate'),
+            ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(BarberCompensationType.guaranteedBase),
+              child: const Text('Guaranteed base + commission'),
             ),
           ],
         ),
@@ -199,6 +207,120 @@ class BarbersScreen extends StatelessWidget {
       );
     }
   }
+
+  static const _removalReasons = [
+    'Resigned / left voluntarily',
+    'End of contract',
+    'Poor performance',
+    'Attendance issues / no-show',
+    'Policy violation',
+    'Business downsizing',
+    'Relocated / moved away',
+    'Other',
+  ];
+
+  Future<void> _confirmRemove(BuildContext context, Barber barber) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        String? selected;
+        final otherController = TextEditingController();
+        return StatefulBuilder(
+          builder: (context, setState) {
+            final isOther = selected == 'Other';
+            return AlertDialog(
+              title: const Text('Remove barber'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Why are you removing "${barber.name}"?',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    RadioGroup<String>(
+                      groupValue: selected ?? '',
+                      onChanged: (v) => setState(() => selected = v),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final r in _removalReasons)
+                            RadioListTile<String>(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(r),
+                              value: r,
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (isOther) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: otherController,
+                        decoration: const InputDecoration(
+                          labelText: 'Specify reason',
+                        ),
+                        maxLines: 2,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Text(
+                      'This barber will be permanently removed from the list. Old sales will keep their records.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: selected == null
+                      ? null
+                      : () {
+                          final value = isOther
+                              ? otherController.text.trim().isEmpty
+                                  ? 'Other'
+                                  : otherController.text.trim()
+                              : selected!;
+                          Navigator.of(context).pop(value);
+                        },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  child: const Text('Remove'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (!context.mounted || reason == null) return;
+
+    try {
+      await context.read<BarbersRepository>().removeBarber(
+            barberId: barber.id,
+            reason: reason,
+          );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Barber removed.')),
+      );
+    } on BarberWriteException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
 }
 
 class _EmptyState extends StatelessWidget {
@@ -247,11 +369,13 @@ class _BarberTile extends StatelessWidget {
     required this.barber,
     required this.onEdit,
     required this.onDeactivate,
+    required this.onRemove,
   });
 
   final Barber barber;
   final VoidCallback onEdit;
   final VoidCallback? onDeactivate;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -261,9 +385,14 @@ class _BarberTile extends StatelessWidget {
         ? theme.colorScheme.secondary
         : theme.colorScheme.onSurfaceVariant;
 
-    final payLine = barber.compensationType == BarberCompensationType.dailyRate
-        ? 'Daily rate: \u20B1${barber.dailyRate.toStringAsFixed(2)}'
-        : 'Share: ${barber.percentageShare.toStringAsFixed(2)}%';
+    final payLine = switch (barber.compensationType) {
+      BarberCompensationType.dailyRate =>
+        'Daily rate: \u20B1${barber.dailyRate.toStringAsFixed(2)}',
+      BarberCompensationType.guaranteedBase =>
+        'Guaranteed \u20B1${barber.dailyRate.toStringAsFixed(2)}/day + ${barber.percentageShare.toStringAsFixed(0)}%',
+      BarberCompensationType.percentage =>
+        'Share: ${barber.percentageShare.toStringAsFixed(2)}%',
+    };
 
     return Card(
       elevation: 0,
@@ -312,6 +441,18 @@ class _BarberTile extends StatelessWidget {
                     onPressed: onDeactivate,
                     icon: const Icon(Icons.block_rounded),
                     label: const Text('Deactivate'),
+                  ),
+                if (onRemove != null)
+                  FilledButton.tonalIcon(
+                    onPressed: onRemove,
+                    icon: Icon(
+                      Icons.delete_outline_rounded,
+                      color: theme.colorScheme.error,
+                    ),
+                    label: Text(
+                      'Remove',
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
                   ),
               ],
             ),
@@ -426,6 +567,11 @@ class _BarberDialogState extends State<_BarberDialog> {
                       label: Text('Daily'),
                       icon: Icon(Icons.calendar_today_outlined),
                     ),
+                    ButtonSegment(
+                      value: BarberCompensationType.guaranteedBase,
+                      label: Text('Guaranteed'),
+                      icon: Icon(Icons.shield_outlined),
+                    ),
                   ],
                   selected: {_compensationType},
                   onSelectionChanged: (s) {
@@ -436,9 +582,11 @@ class _BarberDialogState extends State<_BarberDialog> {
                 const SizedBox(height: 16),
               ] else ...[
                 Text(
-                  _compensationType == BarberCompensationType.dailyRate
-                      ? 'Daily rate'
-                      : 'Percentage of sales',
+                  switch (_compensationType) {
+                    BarberCompensationType.dailyRate => 'Daily rate',
+                    BarberCompensationType.guaranteedBase => 'Guaranteed base + commission',
+                    BarberCompensationType.percentage => 'Percentage of sales',
+                  },
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -453,7 +601,8 @@ class _BarberDialogState extends State<_BarberDialog> {
                     (v == null || v.trim().isEmpty) ? 'Name is required.' : null,
               ),
               const SizedBox(height: 12),
-              if (_compensationType == BarberCompensationType.percentage)
+              if (_compensationType == BarberCompensationType.percentage ||
+                  _compensationType == BarberCompensationType.guaranteedBase)
                 TextFormField(
                   controller: _percentageController,
                   decoration: const InputDecoration(labelText: 'Percentage share (%)'),
@@ -467,12 +616,17 @@ class _BarberDialogState extends State<_BarberDialog> {
                     if (value < 0 || value > 100) return 'Use 0 to 100.';
                     return null;
                   },
-                )
-              else
+                ),
+              if (_compensationType == BarberCompensationType.guaranteedBase)
+                const SizedBox(height: 12),
+              if (_compensationType == BarberCompensationType.dailyRate ||
+                  _compensationType == BarberCompensationType.guaranteedBase)
                 TextFormField(
                   controller: _dailyRateController,
-                  decoration: const InputDecoration(
-                    labelText: 'Daily rate (\u20B1)',
+                  decoration: InputDecoration(
+                    labelText: _compensationType == BarberCompensationType.guaranteedBase
+                        ? 'Guaranteed daily minimum (\u20B1)'
+                        : 'Daily rate (\u20B1)',
                   ),
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
@@ -485,6 +639,15 @@ class _BarberDialogState extends State<_BarberDialog> {
                     return null;
                   },
                 ),
+              if (_compensationType == BarberCompensationType.guaranteedBase) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Barber earns the commission OR the guaranteed daily minimum — whichever is higher.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -505,9 +668,16 @@ class _BarberDialogState extends State<_BarberDialog> {
               final percent = _parsePercent(_percentageController.text);
               if (percent == null) return;
               percentageShare = percent;
-            } else {
+            } else if (type == BarberCompensationType.dailyRate) {
               final dr = _parseMoney(_dailyRateController.text);
               if (dr == null) return;
+              dailyRate = dr;
+            } else {
+              // guaranteedBase: needs both
+              final percent = _parsePercent(_percentageController.text);
+              final dr = _parseMoney(_dailyRateController.text);
+              if (percent == null || dr == null) return;
+              percentageShare = percent;
               dailyRate = dr;
             }
             Navigator.of(context).pop(

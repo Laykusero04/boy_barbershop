@@ -1144,15 +1144,32 @@ List<_BreakdownBarber> _computeBreakdown({
 
     final totalSales = barberSales.fold<double>(0.0, (sum, s) => sum + s.price);
     final servicesCount = barberSales.length;
-    final earnings = barber != null &&
-            barber.compensationType == BarberCompensationType.dailyRate
-        ? barber.dailyRate *
-            barberSales
-                .map((s) => s.saleDay)
-                .where((d) => d.trim().isNotEmpty)
-                .toSet()
-                .length
-        : totalSales * ((barber?.percentageShare ?? 0.0) / 100);
+    final double earnings;
+    if (barber != null &&
+        barber.compensationType == BarberCompensationType.dailyRate) {
+      earnings = barber.dailyRate *
+          barberSales
+              .map((s) => s.saleDay)
+              .where((d) => d.trim().isNotEmpty)
+              .toSet()
+              .length;
+    } else if (barber != null &&
+        barber.compensationType == BarberCompensationType.guaranteedBase) {
+      final dayTotals = <String, double>{};
+      for (final s in barberSales) {
+        final day = s.saleDay.trim();
+        if (day.isEmpty) continue;
+        final base = s.ownerCoversDiscount ? (s.originalPrice ?? s.price) : s.price;
+        dayTotals[day] = (dayTotals[day] ?? 0) + base * (barber.percentageShare / 100.0);
+      }
+      var sum = 0.0;
+      for (final commission in dayTotals.values) {
+        sum += commission > barber.dailyRate ? commission : barber.dailyRate;
+      }
+      earnings = sum;
+    } else {
+      earnings = totalSales * ((barber?.percentageShare ?? 0.0) / 100);
+    }
 
     final byService = <String, List<Sale>>{};
     for (final s in barberSales) {
@@ -1196,6 +1213,9 @@ String _barberEarningsSummaryLine(_BreakdownBarber barber) {
   if (b != null && b.compensationType == BarberCompensationType.dailyRate) {
     return 'Earnings (daily ₱${_formatMoney(b.dailyRate)}): ₱${_formatMoney(barber.earnings)}';
   }
+  if (b != null && b.compensationType == BarberCompensationType.guaranteedBase) {
+    return 'Earnings (${b.percentageShare.toStringAsFixed(0)}% min ₱${_formatMoney(b.dailyRate)}/day): ₱${_formatMoney(barber.earnings)}';
+  }
   final pct = b?.percentageShare ?? 0.0;
   return 'Earnings (${pct.toStringAsFixed(0)}%): ₱${_formatMoney(barber.earnings)}';
 }
@@ -1204,6 +1224,11 @@ String _saleRowEarningsLine({required Sale sale, required Barber? barber}) {
   if (barber != null &&
       barber.compensationType == BarberCompensationType.dailyRate) {
     return 'Daily rate: ₱${_formatMoney(barber.dailyRate)} / day';
+  }
+  if (barber != null &&
+      barber.compensationType == BarberCompensationType.guaranteedBase) {
+    final earn = sale.price * (barber.percentageShare / 100);
+    return 'Earnings (${barber.percentageShare.toStringAsFixed(0)}%): ₱${_formatMoney(earn)} • min ₱${_formatMoney(barber.dailyRate)}/day';
   }
   final share = barber?.percentageShare ?? 0.0;
   final earn = sale.price * (share / 100);

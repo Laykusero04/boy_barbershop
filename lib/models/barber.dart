@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 enum BarberCompensationType {
   percentage,
   dailyRate,
+  guaranteedBase,
 }
 
 class Barber extends Equatable {
@@ -13,6 +14,8 @@ class Barber extends Equatable {
     required this.percentageShare,
     required this.dailyRate,
     required this.isActive,
+    this.removed = false,
+    this.removedReason,
   });
 
   final String id;
@@ -23,6 +26,8 @@ class Barber extends Equatable {
   /// Used when [compensationType] is [BarberCompensationType.dailyRate].
   final double dailyRate;
   final bool isActive;
+  final bool removed;
+  final String? removedReason;
 
   /// Reads Firestore fields; missing `compensation_type` defaults to percentage (legacy docs).
   factory Barber.fromFirestoreMap(String id, Map<String, dynamic> data) {
@@ -38,17 +43,19 @@ class Barber extends Equatable {
       percentageShare: percentageShare,
       dailyRate: dailyRate,
       isActive: (data['is_active'] as bool?) ?? false,
+      removed: (data['removed'] as bool?) ?? false,
+      removedReason: data['removed_reason'] as String?,
     );
   }
 
   @override
   List<Object?> get props =>
-      [id, name, compensationType, percentageShare, dailyRate, isActive];
+      [id, name, compensationType, percentageShare, dailyRate, isActive, removed, removedReason];
 }
 
 BarberCompensationType _parseCompensationType(dynamic raw) {
-  if (raw is String && raw.trim().toLowerCase() == 'daily') {
-    return BarberCompensationType.dailyRate;
-  }
+  final value = (raw is String) ? raw.trim().toLowerCase() : '';
+  if (value == 'daily') return BarberCompensationType.dailyRate;
+  if (value == 'guaranteed_base') return BarberCompensationType.guaranteedBase;
   return BarberCompensationType.percentage;
 }

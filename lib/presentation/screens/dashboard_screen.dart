@@ -26,6 +26,11 @@ String _dashboardSaleEarningsLine({required Sale sale, required Barber? barber})
       barber.compensationType == BarberCompensationType.dailyRate) {
     return 'Daily rate: ₱${formatMoney(barber.dailyRate)} / day';
   }
+  if (barber != null &&
+      barber.compensationType == BarberCompensationType.guaranteedBase) {
+    final earn = sale.price * (barber.percentageShare / 100);
+    return 'Earnings (${barber.percentageShare.toStringAsFixed(0)}%): ₱${formatMoney(earn)} • min ₱${formatMoney(barber.dailyRate)}/day';
+  }
   final share = barber?.percentageShare ?? 0.0;
   final earn = sale.price * (share / 100);
   return 'Earnings (${share.toStringAsFixed(0)}%): ₱${formatMoney(earn)}';
@@ -33,9 +38,12 @@ String _dashboardSaleEarningsLine({required Sale sale, required Barber? barber})
 
 String _dashboardEarningsRowSubtitle(BarberEarningsRow row) {
   final b = row.barber;
-  final pay = b.compensationType == BarberCompensationType.dailyRate
-      ? 'daily ₱${formatMoney(b.dailyRate)}'
-      : '${b.percentageShare.toStringAsFixed(0)}%';
+  final pay = switch (b.compensationType) {
+    BarberCompensationType.dailyRate => 'daily ₱${formatMoney(b.dailyRate)}',
+    BarberCompensationType.guaranteedBase =>
+      '${b.percentageShare.toStringAsFixed(0)}% (min ₱${formatMoney(b.dailyRate)}/day)',
+    BarberCompensationType.percentage => '${b.percentageShare.toStringAsFixed(0)}%',
+  };
   return 'Sales: ₱${formatMoney(row.totalSales)} • ${row.servicesCount} services • $pay';
 }
 

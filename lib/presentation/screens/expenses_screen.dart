@@ -464,7 +464,20 @@ class _AddExpenseDialogState extends State<_AddExpenseDialog> {
   late TimeOfDay _time;
   bool _isRefund = false;
 
-  final _categoryController = TextEditingController();
+  static const _categories = [
+    'Food',
+    'Supplies',
+    'Consumables',
+    'Utilities',
+    'Rent',
+    'Transportation',
+    'Equipment',
+    'Maintenance',
+    'Other',
+  ];
+
+  String? _selectedCategory;
+  final _customCategoryController = TextEditingController();
   final _amountController = TextEditingController();
   final _paymentController = TextEditingController(text: 'Cash');
   final _vendorController = TextEditingController();
@@ -482,7 +495,7 @@ class _AddExpenseDialogState extends State<_AddExpenseDialog> {
 
   @override
   void dispose() {
-    _categoryController.dispose();
+    _customCategoryController.dispose();
     _amountController.dispose();
     _paymentController.dispose();
     _vendorController.dispose();
@@ -535,16 +548,30 @@ class _AddExpenseDialogState extends State<_AddExpenseDialog> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _categoryController,
-                  decoration: const InputDecoration(
-                    labelText: 'Category',
-                    hintText: 'Supplies / consumables',
-                  ),
-                  textInputAction: TextInputAction.next,
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedCategory,
+                  decoration: const InputDecoration(labelText: 'Category'),
+                  items: [
+                    for (final c in _categories)
+                      DropdownMenuItem(value: c, child: Text(c)),
+                  ],
+                  onChanged: (v) => setState(() => _selectedCategory = v),
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? 'Category is required.' : null,
                 ),
+                if (_selectedCategory == 'Other') ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _customCategoryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Custom category',
+                      hintText: 'Enter category name',
+                    ),
+                    textInputAction: TextInputAction.next,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Enter a category name.' : null,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _amountController,
@@ -640,7 +667,9 @@ class _AddExpenseDialogState extends State<_AddExpenseDialog> {
       _AddExpenseResult(
         day: _day,
         time: _time,
-        category: _categoryController.text,
+        category: _selectedCategory == 'Other'
+          ? _customCategoryController.text
+          : _selectedCategory ?? '',
         amount: amount,
         paymentMethod: _paymentController.text.trim().isEmpty ? null : _paymentController.text,
         vendor: _vendorController.text,
