@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/bloc/shifts/shifts_cubit.dart';
+import 'package:boy_barbershop/data/barber_shifts_repository.dart';
 import 'package:boy_barbershop/models/app_user.dart';
 import 'package:boy_barbershop/presentation/drawer/app_drawer.dart';
 import 'package:boy_barbershop/presentation/navigation/destinations.dart';
@@ -28,23 +31,27 @@ class _AppShellState extends State<AppShell> {
     }
 
     final destination = destinationById(_selectedId);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(destination.title),
-      ),
-      drawer: AppDrawer(
-        user: widget.user,
-        selectedId: _selectedId,
-        onSelect: (id) => setState(() => _selectedId = id),
-      ),
-      body: destination.builder(
-        context,
-        widget.user,
-        (id) {
-          if (allowedIds.contains(id)) {
-            setState(() => _selectedId = id);
-          }
-        },
+    return BlocProvider<ShiftsCubit>(
+      create: (ctx) =>
+          ShiftsCubit(ctx.read<BarberShiftsRepository>())..watch(),
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(destination.title),
+        ),
+        drawer: AppDrawer(
+          user: widget.user,
+          selectedId: _selectedId,
+          onSelect: (id) => setState(() => _selectedId = id),
+        ),
+        body: destination.builder(
+          context,
+          widget.user,
+          (id) {
+            if (allowedIds.contains(id)) {
+              setState(() => _selectedId = id);
+            }
+          },
+        ),
       ),
     );
   }

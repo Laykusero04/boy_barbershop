@@ -1,4 +1,5 @@
 import 'package:boy_barbershop/models/barber.dart';
+import 'package:boy_barbershop/models/barber_shift.dart';
 import 'package:boy_barbershop/models/expense.dart';
 import 'package:boy_barbershop/models/sale.dart';
 import 'package:boy_barbershop/presentation/screens/dashboard/dashboard_logic.dart';
@@ -25,6 +26,8 @@ List<MonthlyProfitRow> buildMonthlyProfitRows({
   required List<Sale> sales,
   required List<Expense> expenses,
   required Map<String, Barber> barberById,
+  required List<BarberShift> shifts,
+  required double halfDayMultiplier,
 }) {
   final byMonthSales = <String, List<Sale>>{};
   for (final s in sales) {
@@ -32,6 +35,14 @@ List<MonthlyProfitRow> buildMonthlyProfitRows({
     if (day.length < 7) continue;
     final ym = day.substring(0, 7);
     byMonthSales.putIfAbsent(ym, () => []).add(s);
+  }
+
+  final byMonthShifts = <String, List<BarberShift>>{};
+  for (final s in shifts) {
+    final day = s.occurredDay.trim();
+    if (day.length < 7) continue;
+    final ym = day.substring(0, 7);
+    byMonthShifts.putIfAbsent(ym, () => []).add(s);
   }
 
   final byMonthExpenses = <String, double>{};
@@ -42,12 +53,23 @@ List<MonthlyProfitRow> buildMonthlyProfitRows({
     byMonthExpenses[ym] = (byMonthExpenses[ym] ?? 0) + e.amount;
   }
 
-  final months = {...byMonthSales.keys, ...byMonthExpenses.keys}.toList()..sort();
+  final months = {
+    ...byMonthSales.keys,
+    ...byMonthExpenses.keys,
+    ...byMonthShifts.keys,
+  }.toList()
+    ..sort();
   final rows = <MonthlyProfitRow>[];
   for (final ym in months) {
     final monthSales = byMonthSales[ym] ?? const <Sale>[];
+    final monthShifts = byMonthShifts[ym] ?? const <BarberShift>[];
     final salesTotal = monthSales.fold<double>(0, (a, s) => a + s.price);
-    final share = computeBarberShareTotal(sales: monthSales, barberById: barberById);
+    final share = computeBarberShareTotal(
+      sales: monthSales,
+      barberById: barberById,
+      shifts: monthShifts,
+      halfDayMultiplier: halfDayMultiplier,
+    );
     final exp = byMonthExpenses[ym] ?? 0;
     rows.add(
       MonthlyProfitRow(

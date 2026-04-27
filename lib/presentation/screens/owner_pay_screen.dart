@@ -3,11 +3,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/data/barber_shifts_repository.dart';
 import 'package:boy_barbershop/data/barbers_repository.dart';
 import 'package:boy_barbershop/data/cashflow_repository.dart';
 import 'package:boy_barbershop/data/expenses_repository.dart';
 import 'package:boy_barbershop/data/sales_repository.dart';
 import 'package:boy_barbershop/data/settings_repository.dart';
+import 'package:boy_barbershop/presentation/screens/settings_screen.dart';
 import 'package:boy_barbershop/presentation/screens/dashboard/dashboard_logic.dart';
 import 'package:boy_barbershop/presentation/screens/owner_pay_insights_math.dart';
 import 'package:boy_barbershop/models/app_user.dart';
@@ -42,6 +44,7 @@ class _OwnerPayScreenState extends State<OwnerPayScreen> {
   late final SalesRepository _sales;
   late final ExpensesRepository _expenses;
   late final BarbersRepository _barbers;
+  late final BarberShiftsRepository _shifts;
   bool _depsInit = false;
 
   late String _day;
@@ -77,6 +80,7 @@ class _OwnerPayScreenState extends State<OwnerPayScreen> {
       _sales = context.read<SalesRepository>();
       _expenses = context.read<ExpensesRepository>();
       _barbers = context.read<BarbersRepository>();
+      _shifts = context.read<BarberShiftsRepository>();
       _profitInsightsFuture ??= _loadProfitInsightBundle();
       _weekDataFuture ??= _fetchWeekData(_weekViewDay);
     }
@@ -1032,10 +1036,17 @@ class _OwnerPayScreenState extends State<OwnerPayScreen> {
     final expenses = await _expenses.fetchExpensesForDays(days);
     final barbers = await _barbers.watchAllBarbers().first;
     final barberById = mapBarbersById(barbers);
+    final shifts = await _shifts.fetchShiftsForRangeDays(startDay, endDay);
+    final halfDayMultiplier = await _settings.fetchDouble(
+      kHalfDayPercentageKey,
+      defaultValue: kDefaultHalfDayPercentage,
+    );
     final rows = buildMonthlyProfitRows(
       sales: sales,
       expenses: expenses,
       barberById: barberById,
+      shifts: shifts,
+      halfDayMultiplier: halfDayMultiplier,
     );
     final deposits = await _cashflow.sumOwnerDepositsSinceDay('2020-01-01');
     final ownerPayPct =

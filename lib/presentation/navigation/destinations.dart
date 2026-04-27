@@ -83,7 +83,7 @@ final List<AppDestination> appDestinations = [
     builder: (context, user, _) => BlocProvider(
       create: (ctx) =>
           BarbersCubit(ctx.read<BarbersRepository>())..watch(),
-      child: const BarbersScreen(),
+      child: BarbersScreen(user: user),
     ),
   ),
   AppDestination(

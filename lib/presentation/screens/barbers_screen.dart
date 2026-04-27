@@ -3,11 +3,18 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:boy_barbershop/bloc/barbers/barbers_cubit.dart';
 import 'package:boy_barbershop/bloc/barbers/barbers_state.dart';
+import 'package:boy_barbershop/bloc/shifts/shifts_cubit.dart';
+import 'package:boy_barbershop/bloc/shifts/shifts_state.dart';
 import 'package:boy_barbershop/data/barbers_repository.dart';
+import 'package:boy_barbershop/models/app_user.dart';
 import 'package:boy_barbershop/models/barber.dart';
+import 'package:boy_barbershop/models/barber_shift.dart';
+import 'package:boy_barbershop/presentation/widgets/close_shift_dialog.dart';
 
 class BarbersScreen extends StatelessWidget {
-  const BarbersScreen({super.key});
+  const BarbersScreen({super.key, required this.user});
+
+  final AppUser user;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +57,12 @@ class BarbersScreen extends StatelessWidget {
                                   b.isActive ? () => _confirmDeactivate(context, b) : null,
                               onRemove:
                                   !b.isActive ? () => _confirmRemove(context, b) : null,
+                              onOpenShift: b.isActive
+                                  ? () => _markOnDuty(context, b)
+                                  : null,
+                              onCloseShift: b.isActive
+                                  ? (shift) => _endDuty(context, b, shift)
+                                  : null,
                             ),
                             const SizedBox(height: 12),
                           ],
@@ -169,6 +182,74 @@ class BarbersScreen extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
+    }
+  }
+
+  Future<void> _markOnDuty(BuildContext context, Barber barber) async {
+    final cubit = context.read<ShiftsCubit>();
+    final id = await cubit.openShift(
+      barberId: barber.id,
+      openedByUid: user.uid,
+    );
+    if (!context.mounted) return;
+    if (id == null) {
+      final msg = cubit.state.errorMessage ?? 'Could not mark on duty.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      cubit.clearError();
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${barber.name} is now on duty.')),
+    );
+  }
+
+  Future<void> _endDuty(
+    BuildContext context,
+    Barber barber,
+    BarberShift shift,
+  ) async {
+    final result = await showDialog<EndDutyResult>(
+      context: context,
+      builder: (ctx) => EndDutyDialog(barberName: barber.name),
+    );
+    if (!context.mounted || result == null) return;
+    final cubit = context.read<ShiftsCubit>();
+    switch (result) {
+      case EndDutyClose(:final classification):
+        final ok = await cubit.closeShift(
+          shiftId: shift.id,
+          classification: classification,
+          closedByUid: user.uid,
+        );
+        if (!context.mounted) return;
+        if (!ok) {
+          final msg = cubit.state.errorMessage ?? 'Could not end duty.';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(msg)));
+          cubit.clearError();
+          return;
+        }
+        final label =
+            classification == DayClassification.full ? 'Full day' : 'Half day';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${barber.name} off duty — $label.')),
+        );
+      case EndDutyDiscard():
+        final ok = await cubit.cancelShift(shift.id);
+        if (!context.mounted) return;
+        if (!ok) {
+          final msg = cubit.state.errorMessage ?? 'Could not discard duty.';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(msg)));
+          cubit.clearError();
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('${barber.name}’s duty discarded — no salary charged.'),
+          ),
+        );
     }
   }
 
@@ -370,12 +451,16 @@ class _BarberTile extends StatelessWidget {
     required this.onEdit,
     required this.onDeactivate,
     required this.onRemove,
+    required this.onOpenShift,
+    required this.onCloseShift,
   });
 
   final Barber barber;
   final VoidCallback onEdit;
   final VoidCallback? onDeactivate;
   final VoidCallback? onRemove;
+  final VoidCallback? onOpenShift;
+  final void Function(BarberShift shift)? onCloseShift;
 
   @override
   Widget build(BuildContext context) {
@@ -394,71 +479,152 @@ class _BarberTile extends StatelessWidget {
         'Share: ${barber.percentageShare.toStringAsFixed(2)}%',
     };
 
-    return Card(
-      elevation: 0,
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return BlocBuilder<ShiftsCubit, ShiftsState>(
+      buildWhen: (a, b) =>
+          a.openShiftByBarberId[barber.id] !=
+          b.openShiftByBarberId[barber.id],
+      builder: (context, shiftsState) {
+        final openShift = shiftsState.openShiftFor(barber.id);
+        return Card(
+          elevation: 0,
+          color: theme.colorScheme.surfaceContainerHighest,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    barber.name,
-                    style: theme.textTheme.titleMedium,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        barber.name,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ),
+                    Text(
+                      statusText,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 6),
                 Text(
-                  statusText,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: statusColor,
-                    fontWeight: FontWeight.w700,
+                  payLine,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
+                ),
+                if (barber.isActive) ...[
+                  const SizedBox(height: 8),
+                  _DutyChip(shift: openShift),
+                ],
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: onEdit,
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('Edit'),
+                    ),
+                    if (barber.isActive &&
+                        openShift == null &&
+                        onOpenShift != null)
+                      FilledButton.icon(
+                        onPressed: onOpenShift,
+                        icon: const Icon(Icons.login_rounded),
+                        label: const Text('On duty'),
+                      ),
+                    if (barber.isActive &&
+                        openShift != null &&
+                        onCloseShift != null)
+                      FilledButton.icon(
+                        onPressed: () => onCloseShift!(openShift),
+                        icon: const Icon(Icons.logout_rounded),
+                        label: const Text('Off duty'),
+                      ),
+                    if (onDeactivate != null)
+                      FilledButton.tonalIcon(
+                        onPressed: onDeactivate,
+                        icon: const Icon(Icons.block_rounded),
+                        label: const Text('Deactivate'),
+                      ),
+                    if (onRemove != null)
+                      FilledButton.tonalIcon(
+                        onPressed: onRemove,
+                        icon: Icon(
+                          Icons.delete_outline_rounded,
+                          color: theme.colorScheme.error,
+                        ),
+                        label: Text(
+                          'Remove',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              payLine,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DutyChip extends StatelessWidget {
+  const _DutyChip({required this.shift});
+
+  final BarberShift? shift;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (shift == null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.circle_outlined,
+            size: 14,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'Off duty',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.tonalIcon(
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Edit'),
-                ),
-                if (onDeactivate != null)
-                  FilledButton.tonalIcon(
-                    onPressed: onDeactivate,
-                    icon: const Icon(Icons.block_rounded),
-                    label: const Text('Deactivate'),
-                  ),
-                if (onRemove != null)
-                  FilledButton.tonalIcon(
-                    onPressed: onRemove,
-                    icon: Icon(
-                      Icons.delete_outline_rounded,
-                      color: theme.colorScheme.error,
-                    ),
-                    label: Text(
-                      'Remove',
-                      style: TextStyle(color: theme.colorScheme.error),
-                    ),
-                  ),
-              ],
+          ),
+        ],
+      );
+    }
+    final openedAt = shift!.openedAt;
+    final timeText = openedAt == null
+        ? '—'
+        : MaterialLocalizations.of(context).formatTimeOfDay(
+            TimeOfDay.fromDateTime(openedAt.toLocal()),
+            alwaysUse24HourFormat: false,
+          );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.circle, size: 12, color: Colors.green),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'On duty • opened $timeText',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: Colors.green.shade700,
+              fontWeight: FontWeight.w600,
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

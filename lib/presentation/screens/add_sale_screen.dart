@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/bloc/shifts/shifts_cubit.dart';
+import 'package:boy_barbershop/bloc/shifts/shifts_state.dart';
 import 'package:boy_barbershop/data/admin_repository.dart';
 import 'package:boy_barbershop/data/catalog_repository.dart';
 import 'package:boy_barbershop/data/disputes_repository.dart';
@@ -106,12 +108,56 @@ class _AddSaleFormState extends State<AddSaleForm> {
     final price = _parsePrice(_priceController.text);
     if (price == null) return;
 
+    final barberId = _selectedBarberId ?? '';
+    final serviceId = _selectedServiceId ?? '';
+    final barbers = await _catalogRepo.watchActiveBarbers().first;
+    final services = await _catalogRepo.watchActiveServices().first;
+    if (!mounted) return;
+    final barber = barbers.firstWhere(
+      (b) => b.id == barberId,
+      orElse: () => Barber(
+        id: barberId,
+        name: 'Unknown',
+        compensationType: BarberCompensationType.percentage,
+        percentageShare: 0,
+        dailyRate: 0,
+        isActive: true,
+      ),
+    );
+    final serviceName = services
+        .firstWhere(
+          (s) => s.id == serviceId,
+          orElse: () => ServiceItem(
+            id: serviceId,
+            name: 'Unknown',
+            defaultPrice: price,
+            isActive: true,
+          ),
+        )
+        .name;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => _SaleReceiptDialog(
+        user: widget.user,
+        barber: barber,
+        serviceName: serviceName,
+        price: price,
+        paymentMethodName: _selectedPaymentMethodName,
+        notes: _notesController.text,
+        ownerCoversDiscount: _ownerCoversDiscount,
+        originalPrice: _promoOriginalPrice,
+        discountAmount: _promoDiscountAmount,
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
     setState(() => _isSaving = true);
     try {
       final saleId = await _salesRepo.createSale(
         SaleCreate(
-          barberId: _selectedBarberId ?? '',
-          serviceId: _selectedServiceId ?? '',
+          barberId: barberId,
+          serviceId: serviceId,
           price: price,
           saleDayManila: _todayManilaDay(),
           paymentMethodName: _selectedPaymentMethodName,
@@ -2118,6 +2164,210 @@ class _StreamErrorTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SaleReceiptDialog extends StatelessWidget {
+  const _SaleReceiptDialog({
+    required this.user,
+    required this.barber,
+    required this.serviceName,
+    required this.price,
+    required this.paymentMethodName,
+    required this.notes,
+    required this.ownerCoversDiscount,
+    required this.originalPrice,
+    required this.discountAmount,
+  });
+
+  final AppUser user;
+  final Barber barber;
+  final String serviceName;
+  final double price;
+  final String? paymentMethodName;
+  final String notes;
+  final bool ownerCoversDiscount;
+  final double? originalPrice;
+  final double? discountAmount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cleanedNotes = notes.trim();
+    return AlertDialog(
+      title: const Text('Confirm sale'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ReceiptRow(label: 'Barber', value: barber.name),
+              _ReceiptRow(label: 'Service', value: serviceName),
+              _ReceiptRow(
+                label: 'Price',
+                value: '₱${price.toStringAsFixed(2)}',
+              ),
+              if (originalPrice != null && discountAmount != null) ...[
+                _ReceiptRow(
+                  label: 'Original',
+                  value: '₱${originalPrice!.toStringAsFixed(2)}',
+                ),
+                _ReceiptRow(
+                  label: 'Discount',
+                  value: '−₱${discountAmount!.toStringAsFixed(2)}',
+                ),
+                _ReceiptRow(
+                  label: 'Owner covers',
+                  value: ownerCoversDiscount ? 'Yes' : 'No',
+                ),
+              ],
+              _ReceiptRow(
+                label: 'Payment',
+                value: (paymentMethodName ?? '').trim().isEmpty
+                    ? '—'
+                    : paymentMethodName!,
+              ),
+              if (cleanedNotes.isNotEmpty)
+                _ReceiptRow(label: 'Notes', value: cleanedNotes),
+              const SizedBox(height: 12),
+              Divider(color: theme.colorScheme.outlineVariant),
+              const SizedBox(height: 8),
+              _DutyStatusRow(barber: barber, currentUserUid: user.uid),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Edit'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).pop(true),
+          icon: const Icon(Icons.check_rounded),
+          label: const Text('Confirm & Save'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReceiptRow extends StatelessWidget {
+  const _ReceiptRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DutyStatusRow extends StatelessWidget {
+  const _DutyStatusRow({
+    required this.barber,
+    required this.currentUserUid,
+  });
+
+  final Barber barber;
+  final String currentUserUid;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return BlocBuilder<ShiftsCubit, ShiftsState>(
+      builder: (context, state) {
+        final shift = state.openShiftFor(barber.id);
+        if (shift != null) {
+          final openedAt = shift.openedAt;
+          final timeText = openedAt == null
+              ? '—'
+              : MaterialLocalizations.of(context).formatTimeOfDay(
+                  TimeOfDay.fromDateTime(openedAt.toLocal()),
+                  alwaysUse24HourFormat: false,
+                );
+          return Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.green, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'On duty since $timeText',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: Colors.orange.shade700, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Not on duty — open shift now?',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.orange.shade800,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonal(
+              onPressed: () async {
+                final cubit = context.read<ShiftsCubit>();
+                final id = await cubit.openShift(
+                  barberId: barber.id,
+                  openedByUid: currentUserUid,
+                );
+                if (!context.mounted) return;
+                if (id == null) {
+                  final msg = cubit.state.errorMessage ??
+                      'Could not open shift.';
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(msg)),
+                  );
+                  cubit.clearError();
+                }
+              },
+              child: const Text('Open shift'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

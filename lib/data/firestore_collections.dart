@@ -54,5 +54,10 @@ abstract final class FirestoreCollections {
     FirebaseFirestore db,
   ) =>
       db.collection('sale_disputes');
+
+  static CollectionReference<Map<String, dynamic>> barberShifts(
+    FirebaseFirestore db,
+  ) =>
+      db.collection('barber_shifts');
 }
 

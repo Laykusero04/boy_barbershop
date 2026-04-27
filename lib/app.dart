@@ -9,6 +9,7 @@ import 'package:boy_barbershop/data/cashflow_repository.dart';
 import 'package:boy_barbershop/data/catalog_repository.dart';
 import 'package:boy_barbershop/data/expenses_repository.dart';
 import 'package:boy_barbershop/data/admin_repository.dart';
+import 'package:boy_barbershop/data/barber_shifts_repository.dart';
 import 'package:boy_barbershop/data/disputes_repository.dart';
 import 'package:boy_barbershop/data/inventory_repository.dart';
 import 'package:boy_barbershop/data/payment_methods_repository.dart';
@@ -45,6 +46,7 @@ class MyApp extends StatelessWidget {
         ),
         RepositoryProvider(create: (_) => AdminRepository()),
         RepositoryProvider(create: (_) => DisputesRepository()),
+        RepositoryProvider(create: (_) => BarberShiftsRepository()),
       ],
       child: BlocProvider(
         create: (_) => AppBloc()..add(const AppStarted()),

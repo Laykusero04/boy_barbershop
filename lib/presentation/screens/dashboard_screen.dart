@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:boy_barbershop/bloc/shifts/shifts_cubit.dart';
 import 'package:boy_barbershop/data/admin_repository.dart';
+import 'package:boy_barbershop/data/barber_shifts_repository.dart';
 import 'package:boy_barbershop/data/barbers_repository.dart';
 import 'package:boy_barbershop/data/catalog_repository.dart';
 import 'package:boy_barbershop/data/expenses_repository.dart';
@@ -9,6 +11,7 @@ import 'package:boy_barbershop/data/inventory_repository.dart';
 import 'package:boy_barbershop/data/sales_repository.dart';
 import 'package:boy_barbershop/data/settings_repository.dart';
 import 'package:boy_barbershop/models/barber.dart';
+import 'package:boy_barbershop/models/barber_shift.dart';
 import 'package:boy_barbershop/models/app_user.dart';
 import 'package:boy_barbershop/models/user_role.dart';
 import 'package:boy_barbershop/models/expense.dart';
@@ -18,6 +21,8 @@ import 'package:boy_barbershop/models/sale.dart';
 import 'package:boy_barbershop/presentation/screens/add_sale_screen.dart';
 import 'package:boy_barbershop/presentation/screens/dashboard/dashboard_logic.dart';
 import 'package:boy_barbershop/presentation/screens/dashboard/dashboard_models.dart';
+import 'package:boy_barbershop/presentation/screens/settings_screen.dart';
+import 'package:boy_barbershop/presentation/widgets/close_shift_dialog.dart';
 import 'package:boy_barbershop/utils/day_range.dart';
 import 'package:boy_barbershop/utils/shop_time.dart';
 
@@ -162,6 +167,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final settingsRepo = context.read<SettingsRepository>();
     final catalogRepo = context.read<CatalogRepository>();
     final adminRepo = context.read<AdminRepository>();
+    final shiftsRepo = context.read<BarberShiftsRepository>();
 
     return SafeArea(
       child: ListView(
@@ -202,10 +208,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       final expenses = expSnap.data ?? const <Expense>[];
                       final expensesTotal = sumExpenses(expenses);
 
-                      final kpis =
-                          computeKpis(sales: sales, expensesTotal: expensesTotal, barberById: barberById);
-                      final earningsRows = computeEarningsRows(sales: sales, barbers: barbers);
-
                       return StreamBuilder<List<InventoryItem>>(
                         stream: inventoryRepo.watchActiveInventoryItems(),
                         builder: (context, invSnap) {
@@ -217,59 +219,114 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           }
                           final lowStock = lowStockItems(invSnap.data ?? const <InventoryItem>[]);
 
-                          return StreamBuilder<double?>(
-                            stream: settingsRepo.watchOptionalDouble(_dailyTargetSalesKey),
-                            builder: (context, targetSnap) {
-                              final targetSales = targetSnap.data;
-                              final alerts = buildAlerts(
-                                todayManilaDay: day,
-                                dailyTargetSalesAmount: targetSales,
-                                todaySalesTotal: kpis.sales,
-                                lowStock: lowStock,
-                              );
+                          return StreamBuilder<double>(
+                            stream: settingsRepo.watchDouble(
+                              kHalfDayPercentageKey,
+                              defaultValue: kDefaultHalfDayPercentage,
+                            ),
+                            builder: (context, halfDaySnap) {
+                              final halfDayMultiplier =
+                                  halfDaySnap.data ?? kDefaultHalfDayPercentage;
+                              return StreamBuilder<List<BarberShift>>(
+                                stream: shiftsRepo.watchShiftsForDay(day),
+                                builder: (context, shiftsSnap) {
+                                  final todayShifts =
+                                      shiftsSnap.data ?? const <BarberShift>[];
+                                  final kpis = computeKpis(
+                                    sales: sales,
+                                    expensesTotal: expensesTotal,
+                                    barberById: barberById,
+                                    shifts: todayShifts,
+                                    halfDayMultiplier: halfDayMultiplier,
+                                  );
+                                  final earningsRows = computeEarningsRows(
+                                    sales: sales,
+                                    barbers: barbers,
+                                    shifts: todayShifts,
+                                    halfDayMultiplier: halfDayMultiplier,
+                                  );
+                                  return StreamBuilder<double?>(
+                                    stream: settingsRepo.watchOptionalDouble(
+                                        _dailyTargetSalesKey),
+                                    builder: (context, targetSnap) {
+                                      final targetSales = targetSnap.data;
+                                      final alerts = buildAlerts(
+                                        todayManilaDay: day,
+                                        dailyTargetSalesAmount: targetSales,
+                                        todaySalesTotal: kpis.sales,
+                                        lowStock: lowStock,
+                                      );
 
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (alerts.isNotEmpty) ...[
-                                    _AlertsCard(
-                                      alerts: alerts.take(3).toList(growable: false),
-                                      onOpenTarget: () => widget.goToDestination('peak_and_daily_target'),
-                                      onOpenInventory: () => widget.goToDestination('inventory'),
-                                    ),
-                                    const SizedBox(height: _kSectionGap),
-                                  ],
-                                  _TodayCard(
-                                    user: widget.user,
-                                    day: day,
-                                    sales: sales,
-                                    kpis: kpis,
-                                    dailyTargetSales: targetSales,
-                                    onOpenAddSale: () =>
-                                        showAddSaleDialog(context, user: widget.user),
-                                  ),
-                                  const SizedBox(height: _kSectionGap),
-                                  _TodaySalesCard(
-                                    user: widget.user,
-                                    sales: sales,
-                                    barberById: barberById,
-                                    userById: userById,
-                                    paymentMethods: catalogRepo.watchActivePaymentMethods(),
-                                    barbersStream: barbersRepo.watchAllBarbers(),
-                                    onEditSaved: () {},
-                                    onDeleteSaved: () {},
-                                    salesRepo: salesRepo,
-                                  ),
-                                  const SizedBox(height: _kSectionGap),
-                                  _BarberEarningsCard(rows: earningsRows),
-                                  const SizedBox(height: _kSectionGap),
-                                  _ThisMonthCard(
-                                    anyDayInMonth: day,
-                                    salesRepo: salesRepo,
-                                    expensesRepo: expensesRepo,
-                                    barberById: barberById,
-                                  ),
-                                ],
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          if (alerts.isNotEmpty) ...[
+                                            _AlertsCard(
+                                              alerts: alerts
+                                                  .take(3)
+                                                  .toList(growable: false),
+                                              onOpenTarget: () =>
+                                                  widget.goToDestination(
+                                                      'peak_and_daily_target'),
+                                              onOpenInventory: () =>
+                                                  widget.goToDestination(
+                                                      'inventory'),
+                                            ),
+                                            const SizedBox(
+                                                height: _kSectionGap),
+                                          ],
+                                          _TodayCard(
+                                            user: widget.user,
+                                            day: day,
+                                            sales: sales,
+                                            kpis: kpis,
+                                            dailyTargetSales: targetSales,
+                                            onOpenAddSale: () =>
+                                                showAddSaleDialog(context,
+                                                    user: widget.user),
+                                          ),
+                                          const SizedBox(height: _kSectionGap),
+                                          _OnDutyStrip(
+                                            user: widget.user,
+                                            barbers: barbers,
+                                            barberById: barberById,
+                                            shifts: todayShifts,
+                                            halfDayMultiplier:
+                                                halfDayMultiplier,
+                                          ),
+                                          const SizedBox(height: _kSectionGap),
+                                          _TodaySalesCard(
+                                            user: widget.user,
+                                            sales: sales,
+                                            barberById: barberById,
+                                            userById: userById,
+                                            paymentMethods: catalogRepo
+                                                .watchActivePaymentMethods(),
+                                            barbersStream:
+                                                barbersRepo.watchAllBarbers(),
+                                            onEditSaved: () {},
+                                            onDeleteSaved: () {},
+                                            salesRepo: salesRepo,
+                                          ),
+                                          const SizedBox(height: _kSectionGap),
+                                          _BarberEarningsCard(
+                                              rows: earningsRows),
+                                          const SizedBox(height: _kSectionGap),
+                                          _ThisMonthCard(
+                                            anyDayInMonth: day,
+                                            salesRepo: salesRepo,
+                                            expensesRepo: expensesRepo,
+                                            barberById: barberById,
+                                            shiftsRepo: shiftsRepo,
+                                            halfDayMultiplier:
+                                                halfDayMultiplier,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+                                },
                               );
                             },
                           );
@@ -1063,12 +1120,16 @@ class _ThisMonthCard extends StatelessWidget {
     required this.salesRepo,
     required this.expensesRepo,
     required this.barberById,
+    required this.shiftsRepo,
+    required this.halfDayMultiplier,
   });
 
   final String anyDayInMonth;
   final SalesRepository salesRepo;
   final ExpensesRepository expensesRepo;
   final Map<String, Barber> barberById;
+  final BarberShiftsRepository shiftsRepo;
+  final double halfDayMultiplier;
 
   @override
   Widget build(BuildContext context) {
@@ -1080,6 +1141,7 @@ class _ThisMonthCard extends StatelessWidget {
       future: Future.wait([
         salesRepo.fetchSalesForDaysSafe(days),
         expensesRepo.fetchExpensesForDays(days),
+        shiftsRepo.fetchShiftsForRangeDays(range.startDay, range.endDay),
       ]),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -1124,8 +1186,15 @@ class _ThisMonthCard extends StatelessWidget {
         }
         final sales = snap.data![0] as List<Sale>;
         final expenses = snap.data![1] as List<Expense>;
+        final shifts = snap.data![2] as List<BarberShift>;
         final expensesTotal = sumExpenses(expenses);
-        final kpis = computeKpis(sales: sales, expensesTotal: expensesTotal, barberById: barberById);
+        final kpis = computeKpis(
+          sales: sales,
+          expensesTotal: expensesTotal,
+          barberById: barberById,
+          shifts: shifts,
+          halfDayMultiplier: halfDayMultiplier,
+        );
 
         return Card(
           elevation: 0,
@@ -1188,6 +1257,239 @@ class _ThisMonthCard extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _OnDutyStrip extends StatelessWidget {
+  const _OnDutyStrip({
+    required this.user,
+    required this.barbers,
+    required this.barberById,
+    required this.shifts,
+    required this.halfDayMultiplier,
+  });
+
+  final AppUser user;
+  final List<Barber> barbers;
+  final Map<String, Barber> barberById;
+  final List<BarberShift> shifts;
+  final double halfDayMultiplier;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final openByBarberId = <String, BarberShift>{
+      for (final s in shifts)
+        if (s.isOpen && s.barberId.isNotEmpty) s.barberId: s,
+    };
+    final activeBarbers =
+        barbers.where((b) => b.isActive).toList(growable: false);
+
+    var projected = 0.0;
+    for (final s in shifts) {
+      final b = barberById[s.barberId];
+      if (b == null) continue;
+      if (b.compensationType == BarberCompensationType.percentage) continue;
+      final m = s.dayClassification == DayClassification.half
+          ? halfDayMultiplier
+          : 1.0;
+      projected += b.dailyRate * m;
+    }
+
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Who’s on duty',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+                Text(
+                  'Projected daily cost: ₱${formatMoney(projected)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tap a barber to open or close their shift.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (activeBarbers.isEmpty)
+              Text(
+                'No active barbers. Add one in the Barbers screen.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              Column(
+                children: [
+                  for (final b in activeBarbers)
+                    _DutyRosterRow(
+                      user: user,
+                      barber: b,
+                      openShift: openByBarberId[b.id],
+                    ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DutyRosterRow extends StatelessWidget {
+  const _DutyRosterRow({
+    required this.user,
+    required this.barber,
+    required this.openShift,
+  });
+
+  final AppUser user;
+  final Barber barber;
+  final BarberShift? openShift;
+
+  Future<void> _markOnDuty(BuildContext context) async {
+    final cubit = context.read<ShiftsCubit>();
+    final id = await cubit.openShift(
+      barberId: barber.id,
+      openedByUid: user.uid,
+    );
+    if (!context.mounted) return;
+    if (id == null) {
+      final msg = cubit.state.errorMessage ?? 'Could not mark on duty.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      cubit.clearError();
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${barber.name} is now on duty.')),
+    );
+  }
+
+  Future<void> _endDuty(BuildContext context, BarberShift shift) async {
+    final result = await showDialog<EndDutyResult>(
+      context: context,
+      builder: (ctx) => EndDutyDialog(barberName: barber.name),
+    );
+    if (!context.mounted || result == null) return;
+    final cubit = context.read<ShiftsCubit>();
+    switch (result) {
+      case EndDutyClose(:final classification):
+        final ok = await cubit.closeShift(
+          shiftId: shift.id,
+          classification: classification,
+          closedByUid: user.uid,
+        );
+        if (!context.mounted) return;
+        if (!ok) {
+          final msg = cubit.state.errorMessage ?? 'Could not end duty.';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(msg)));
+          cubit.clearError();
+          return;
+        }
+        final label =
+            classification == DayClassification.full ? 'Full day' : 'Half day';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${barber.name} off duty — $label.')),
+        );
+      case EndDutyDiscard():
+        final ok = await cubit.cancelShift(shift.id);
+        if (!context.mounted) return;
+        if (!ok) {
+          final msg = cubit.state.errorMessage ?? 'Could not discard duty.';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(msg)));
+          cubit.clearError();
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('${barber.name}’s duty discarded — no salary charged.'),
+          ),
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isOn = openShift != null;
+    final openedAt = openShift?.openedAt;
+    final timeText = openedAt == null
+        ? null
+        : MaterialLocalizations.of(context).formatTimeOfDay(
+            TimeOfDay.fromDateTime(openedAt.toLocal()),
+            alwaysUse24HourFormat: false,
+          );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(
+            isOn ? Icons.circle : Icons.circle_outlined,
+            size: 14,
+            color: isOn ? Colors.green : theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  barber.name,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  isOn
+                      ? 'On duty • opened ${timeText ?? '—'}'
+                      : 'Off duty',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: isOn
+                        ? Colors.green.shade700
+                        : theme.colorScheme.onSurfaceVariant,
+                    fontWeight: isOn ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isOn)
+            FilledButton.tonalIcon(
+              onPressed: () => _endDuty(context, openShift!),
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text('Off duty'),
+            )
+          else
+            FilledButton.icon(
+              onPressed: () => _markOnDuty(context),
+              icon: const Icon(Icons.login_rounded, size: 18),
+              label: const Text('On duty'),
+            ),
+        ],
+      ),
     );
   }
 }
