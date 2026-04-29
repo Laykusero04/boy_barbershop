@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'package:boy_barbershop/bloc/shifts/shifts_cubit.dart';
-import 'package:boy_barbershop/bloc/shifts/shifts_state.dart';
 import 'package:boy_barbershop/data/admin_repository.dart';
 import 'package:boy_barbershop/data/catalog_repository.dart';
 import 'package:boy_barbershop/data/disputes_repository.dart';
@@ -139,7 +137,6 @@ class _AddSaleFormState extends State<AddSaleForm> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => _SaleReceiptDialog(
-        user: widget.user,
         barber: barber,
         serviceName: serviceName,
         price: price,
@@ -2170,7 +2167,6 @@ class _StreamErrorTile extends StatelessWidget {
 
 class _SaleReceiptDialog extends StatelessWidget {
   const _SaleReceiptDialog({
-    required this.user,
     required this.barber,
     required this.serviceName,
     required this.price,
@@ -2181,7 +2177,6 @@ class _SaleReceiptDialog extends StatelessWidget {
     required this.discountAmount,
   });
 
-  final AppUser user;
   final Barber barber;
   final String serviceName;
   final double price;
@@ -2193,7 +2188,6 @@ class _SaleReceiptDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final cleanedNotes = notes.trim();
     return AlertDialog(
       title: const Text('Confirm sale'),
@@ -2232,10 +2226,6 @@ class _SaleReceiptDialog extends StatelessWidget {
               ),
               if (cleanedNotes.isNotEmpty)
                 _ReceiptRow(label: 'Notes', value: cleanedNotes),
-              const SizedBox(height: 12),
-              Divider(color: theme.colorScheme.outlineVariant),
-              const SizedBox(height: 8),
-              _DutyStatusRow(barber: barber, currentUserUid: user.uid),
             ],
           ),
         ),
@@ -2292,82 +2282,3 @@ class _ReceiptRow extends StatelessWidget {
   }
 }
 
-class _DutyStatusRow extends StatelessWidget {
-  const _DutyStatusRow({
-    required this.barber,
-    required this.currentUserUid,
-  });
-
-  final Barber barber;
-  final String currentUserUid;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return BlocBuilder<ShiftsCubit, ShiftsState>(
-      builder: (context, state) {
-        final shift = state.openShiftFor(barber.id);
-        if (shift != null) {
-          final openedAt = shift.openedAt;
-          final timeText = openedAt == null
-              ? '—'
-              : MaterialLocalizations.of(context).formatTimeOfDay(
-                  TimeOfDay.fromDateTime(openedAt.toLocal()),
-                  alwaysUse24HourFormat: false,
-                );
-          return Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.green, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'On duty since $timeText',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: Colors.green.shade700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          );
-        }
-        return Row(
-          children: [
-            Icon(Icons.warning_amber_rounded,
-                color: Colors.orange.shade700, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Not on duty — open shift now?',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: Colors.orange.shade800,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.tonal(
-              onPressed: () async {
-                final cubit = context.read<ShiftsCubit>();
-                final id = await cubit.openShift(
-                  barberId: barber.id,
-                  openedByUid: currentUserUid,
-                );
-                if (!context.mounted) return;
-                if (id == null) {
-                  final msg = cubit.state.errorMessage ??
-                      'Could not open shift.';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(msg)),
-                  );
-                  cubit.clearError();
-                }
-              },
-              child: const Text('Open shift'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
